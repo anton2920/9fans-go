@@ -1,3 +1,4 @@
+//go:build !plan9
 // +build !plan9
 
 package client // import "9fans.net/go/plan9/client"

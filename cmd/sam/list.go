@@ -1,5 +1,6 @@
 // #include "sam.h"
 
+//go:build ignore
 // +build ignore
 
 package main

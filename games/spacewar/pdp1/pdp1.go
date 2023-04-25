@@ -52,7 +52,6 @@
 //	Barry Silverman
 //	Brian Silverman
 //	Vadim Gerasimov
-//
 package pdp1 // import "9fans.net/go/games/spacewar/pdp1"
 
 import (

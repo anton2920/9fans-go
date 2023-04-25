@@ -482,8 +482,8 @@ func Textselect(t *wind.Text) {
 	}
 }
 
-var BigLock = func(){}
-var BigUnlock = func(){}
+var BigLock = func() {}
+var BigUnlock = func() {}
 
 /*
  * Release the button in less than DELAY ms and it's considered a null selection
