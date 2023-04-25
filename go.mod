@@ -1,4 +1,4 @@
-module 9fans.net/go
+module github.com/anton2920/9fans-go
 
 go 1.13
 
