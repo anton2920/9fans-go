@@ -23,11 +23,11 @@ import (
 	"sync"
 	"time"
 
-	"9fans.net/go/cmd/acme/internal/ui"
-	"9fans.net/go/cmd/acme/internal/util"
-	"9fans.net/go/cmd/acme/internal/wind"
-	"9fans.net/go/cmd/internal/base"
-	"9fans.net/go/plan9"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/ui"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/util"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/wind"
+	"github.com/anton2920/9fans-go/cmd/internal/base"
+	"github.com/anton2920/9fans-go/plan9"
 )
 
 func QID(w, q int) uint64  { return uint64(w<<8 | q) }

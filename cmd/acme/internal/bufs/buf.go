@@ -3,7 +3,7 @@ package bufs
 import (
 	"sync"
 
-	"9fans.net/go/cmd/acme/internal/runes"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/runes"
 )
 
 const Len = 32 * 1024

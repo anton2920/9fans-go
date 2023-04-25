@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"9fans.net/go/draw"
+	"github.com/anton2920/9fans-go/draw"
 )
 
 const (

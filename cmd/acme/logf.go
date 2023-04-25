@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"sync"
 
-	"9fans.net/go/cmd/acme/internal/wind"
-	"9fans.net/go/plan9"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/wind"
+	"github.com/anton2920/9fans-go/plan9"
 )
 
 type Log struct {

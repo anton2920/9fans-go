@@ -21,15 +21,15 @@ import (
 	"fmt"
 	"time"
 
-	"9fans.net/go/cmd/acme/internal/adraw"
-	"9fans.net/go/cmd/acme/internal/alog"
-	"9fans.net/go/cmd/acme/internal/bufs"
-	"9fans.net/go/cmd/acme/internal/runes"
-	"9fans.net/go/cmd/acme/internal/ui"
-	"9fans.net/go/cmd/acme/internal/wind"
-	"9fans.net/go/plan9"
-	"9fans.net/go/plan9/client"
-	"9fans.net/go/plumb"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/adraw"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/alog"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/bufs"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/runes"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/ui"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/wind"
+	"github.com/anton2920/9fans-go/plan9"
+	"github.com/anton2920/9fans-go/plan9/client"
+	"github.com/anton2920/9fans-go/plumb"
 )
 
 var plumbeditfid *client.Fid

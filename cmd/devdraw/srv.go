@@ -13,9 +13,9 @@ import (
 	"strconv"
 	"time"
 
-	"9fans.net/go/draw"
-	"9fans.net/go/draw/drawfcall"
-	"9fans.net/go/draw/memdraw"
+	"github.com/anton2920/9fans-go/draw"
+	"github.com/anton2920/9fans-go/draw/drawfcall"
+	"github.com/anton2920/9fans-go/draw/memdraw"
 )
 
 var client0 *Client

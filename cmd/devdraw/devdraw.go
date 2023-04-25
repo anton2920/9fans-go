@@ -12,8 +12,8 @@ import (
 	"sync"
 	"unsafe"
 
-	"9fans.net/go/draw"
-	"9fans.net/go/draw/memdraw"
+	"github.com/anton2920/9fans-go/draw"
+	"github.com/anton2920/9fans-go/draw/memdraw"
 )
 
 var drawdebug int

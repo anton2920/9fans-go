@@ -7,14 +7,14 @@ import (
 	"sync"
 	"unsafe"
 
-	"9fans.net/go/cmd/acme/internal/adraw"
-	"9fans.net/go/cmd/acme/internal/alog"
-	"9fans.net/go/cmd/acme/internal/bufs"
-	"9fans.net/go/cmd/acme/internal/file"
-	"9fans.net/go/cmd/acme/internal/runes"
-	"9fans.net/go/cmd/acme/internal/util"
-	"9fans.net/go/draw"
-	"9fans.net/go/draw/frame"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/adraw"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/alog"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/bufs"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/file"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/runes"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/util"
+	"github.com/anton2920/9fans-go/draw"
+	"github.com/anton2920/9fans-go/draw/frame"
 )
 
 type Window struct {

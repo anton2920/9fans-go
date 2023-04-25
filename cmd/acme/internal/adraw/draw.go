@@ -1,8 +1,8 @@
 package adraw
 
 import (
-	"9fans.net/go/draw"
-	"9fans.net/go/draw/frame"
+	"github.com/anton2920/9fans-go/draw"
+	"github.com/anton2920/9fans-go/draw/frame"
 )
 
 var Display *draw.Display

@@ -4,7 +4,7 @@ import (
 	"io"
 	"io/ioutil"
 
-	"9fans.net/go/plan9"
+	"github.com/anton2920/9fans-go/plan9"
 )
 
 func (fid *Fid) Dirread() ([]*plan9.Dir, error) {

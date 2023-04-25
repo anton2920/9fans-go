@@ -17,7 +17,7 @@
 package memdraw
 
 import (
-	"9fans.net/go/draw"
+	"github.com/anton2920/9fans-go/draw"
 )
 
 func lhideop(src *Image, screenr draw.Rectangle, clipr draw.Rectangle, etc interface{}, insave int) {
