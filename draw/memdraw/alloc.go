@@ -11,7 +11,7 @@ package memdraw
 import (
 	"fmt"
 
-	"9fans.net/go/draw"
+	"github.com/anton2920/9fans-go/draw"
 )
 
 func allocmemimaged(r draw.Rectangle, chan_ draw.Pix, md *_Memdata, X interface{}) (*Image, error) {

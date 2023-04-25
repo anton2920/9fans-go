@@ -1,9 +1,9 @@
 package addr
 
 import (
-	"9fans.net/go/cmd/acme/internal/alog"
-	"9fans.net/go/cmd/acme/internal/regx"
-	"9fans.net/go/cmd/acme/internal/runes"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/alog"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/regx"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/runes"
 )
 
 const (

@@ -3,7 +3,7 @@
 // Many of the functions in this package take a format string and optional
 // parameters.  In the documentation, the notation format, ... denotes the result
 // of formatting the string and arguments using fmt.Sprintf.
-package acme // import "9fans.net/go/acme"
+package acme // import "github.com/anton2920/9fans-go/acme"
 
 import (
 	"bufio"
@@ -22,9 +22,9 @@ import (
 	"sync"
 	"time"
 
-	"9fans.net/go/draw"
-	"9fans.net/go/plan9"
-	"9fans.net/go/plan9/client"
+	"github.com/anton2920/9fans-go/draw"
+	"github.com/anton2920/9fans-go/plan9"
+	"github.com/anton2920/9fans-go/plan9/client"
 )
 
 // A Win represents a single acme window and its control files.

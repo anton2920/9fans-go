@@ -6,7 +6,7 @@
 
 package memdraw
 
-import "9fans.net/go/draw"
+import "github.com/anton2920/9fans-go/draw"
 
 /*
  * Pull i towards top of screen, just behind front

@@ -23,14 +23,14 @@ import (
 	"strconv"
 	"unicode/utf8"
 
-	"9fans.net/go/cmd/acme/internal/adraw"
-	"9fans.net/go/cmd/acme/internal/alog"
-	"9fans.net/go/cmd/acme/internal/bufs"
-	"9fans.net/go/cmd/acme/internal/fileload"
-	"9fans.net/go/cmd/acme/internal/ui"
-	"9fans.net/go/cmd/acme/internal/util"
-	"9fans.net/go/cmd/acme/internal/wind"
-	"9fans.net/go/draw"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/adraw"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/alog"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/bufs"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/fileload"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/ui"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/util"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/wind"
+	"github.com/anton2920/9fans-go/draw"
 )
 
 var Get = func(*wind.Text) {}

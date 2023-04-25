@@ -19,11 +19,11 @@ package ui
 import (
 	"fmt"
 
-	"9fans.net/go/cmd/acme/internal/adraw"
-	"9fans.net/go/cmd/acme/internal/runes"
-	"9fans.net/go/cmd/acme/internal/wind"
-	"9fans.net/go/draw"
-	"9fans.net/go/draw/frame"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/adraw"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/runes"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/wind"
+	"github.com/anton2920/9fans-go/draw"
+	"github.com/anton2920/9fans-go/draw/frame"
 )
 
 func Fontx(et, t, argt *wind.Text, _, _ bool, arg []rune) {

@@ -17,8 +17,8 @@
 package ui
 
 import (
-	"9fans.net/go/cmd/acme/internal/runes"
-	"9fans.net/go/cmd/acme/internal/wind"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/runes"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/wind"
 )
 
 func New(et, t, argt *wind.Text, flag1, flag2 bool, arg []rune) {

@@ -17,13 +17,13 @@ package ui
 import (
 	"unicode/utf8"
 
-	"9fans.net/go/cmd/acme/internal/adraw"
-	"9fans.net/go/cmd/acme/internal/bufs"
-	"9fans.net/go/cmd/acme/internal/disk"
-	"9fans.net/go/cmd/acme/internal/runes"
-	"9fans.net/go/cmd/acme/internal/util"
-	"9fans.net/go/cmd/acme/internal/wind"
-	"9fans.net/go/draw"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/adraw"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/bufs"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/disk"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/runes"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/util"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/wind"
+	"github.com/anton2920/9fans-go/draw"
 )
 
 func savemouse(w *wind.Window) {

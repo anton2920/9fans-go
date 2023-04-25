@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"syscall"
 
-	"9fans.net/go/draw"
+	"github.com/anton2920/9fans-go/draw"
 )
 
 func main(argc int, argv []*int8) {

@@ -3,8 +3,8 @@
 package edit
 
 import (
-	"9fans.net/go/cmd/acme/internal/runes"
-	"9fans.net/go/cmd/acme/internal/wind"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/runes"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/wind"
 )
 
 type String struct {

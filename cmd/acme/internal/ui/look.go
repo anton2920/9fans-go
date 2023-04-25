@@ -21,16 +21,16 @@ import (
 	"os"
 	"path"
 
-	"9fans.net/go/cmd/acme/internal/addr"
-	"9fans.net/go/cmd/acme/internal/adraw"
-	"9fans.net/go/cmd/acme/internal/alog"
-	"9fans.net/go/cmd/acme/internal/bufs"
-	"9fans.net/go/cmd/acme/internal/runes"
-	"9fans.net/go/cmd/acme/internal/util"
-	"9fans.net/go/cmd/acme/internal/wind"
-	"9fans.net/go/draw"
-	"9fans.net/go/plan9/client"
-	"9fans.net/go/plumb"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/addr"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/adraw"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/alog"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/bufs"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/runes"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/util"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/wind"
+	"github.com/anton2920/9fans-go/draw"
+	"github.com/anton2920/9fans-go/plan9/client"
+	"github.com/anton2920/9fans-go/plumb"
 )
 
 func Look3(t *wind.Text, q0, q1 int, external bool) {

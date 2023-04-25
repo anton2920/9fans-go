@@ -15,10 +15,10 @@
 package wind
 
 import (
-	"9fans.net/go/cmd/acme/internal/adraw"
-	"9fans.net/go/cmd/acme/internal/util"
-	"9fans.net/go/draw"
-	"9fans.net/go/draw/frame"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/adraw"
+	"github.com/anton2920/9fans-go/cmd/acme/internal/util"
+	"github.com/anton2920/9fans-go/draw"
+	"github.com/anton2920/9fans-go/draw/frame"
 )
 
 var scrtmp *draw.Image
