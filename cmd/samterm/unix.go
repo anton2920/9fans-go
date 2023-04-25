@@ -39,7 +39,8 @@ func extstart() {
 		}
 	}
 
-	fd, err := syscall.Open(exname, syscall.O_RDONLY|syscall.O_NONBLOCK, 0)
+	/* fd, err := syscall.Open(exname, syscall.O_RDONLY|syscall.O_NONBLOCK, 0) */
+	fd, err := os.OpenFile(exname, syscall.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		removeextern()
 		return
@@ -47,11 +48,11 @@ func extstart() {
 
 	// Turn off no-delay and provide ourselves as a lingering
 	// writer so as not to get end of file on read.
-	flags, err := unix.FcntlInt(uintptr(fd), syscall.F_GETFL, 0)
+	flags, err := unix.FcntlInt(fd.Fd(), syscall.F_GETFL, 0)
 	if err != nil {
 		goto Fail
 	}
-	if _, err := unix.FcntlInt(uintptr(fd), syscall.F_SETFL, flags & ^syscall.O_NONBLOCK); err != nil {
+	if _, err := unix.FcntlInt(fd.Fd(), syscall.F_SETFL, flags & ^syscall.O_NONBLOCK); err != nil {
 		goto Fail
 	}
 	if _, err := syscall.Open(exname, syscall.O_WRONLY, 0); err != nil {
@@ -64,6 +65,6 @@ func extstart() {
 	return
 
 Fail:
-	syscall.Close(fd)
+	fd.Close()
 	removeextern()
 }

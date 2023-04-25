@@ -2,7 +2,6 @@ package draw
 
 import (
 	"fmt"
-	"image"
 	"os"
 	"runtime"
 	"strings"
