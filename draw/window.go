@@ -2,7 +2,6 @@ package draw
 
 import (
 	"fmt"
-	"image"
 	"io/ioutil"
 	"runtime"
 )
