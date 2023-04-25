@@ -21,7 +21,6 @@
 // The other known extensions and formatters are:
 //
 //	.rs - rustfmt
-//
 package main
 
 import (
