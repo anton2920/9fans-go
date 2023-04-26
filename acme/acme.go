@@ -20,7 +20,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/anton2920/9fans-go/draw"
@@ -446,12 +445,7 @@ func (w *Win) Write(file string, b []byte) (n int, err error) {
 	if err != nil {
 		return 0, err
 	}
-
-	/* NOTE(anton2920): on Plan 9 (*os.File).Write doesn't allow zero-byte writes.
-	 * syscall.Write, on the other hand, doesn't complain about that,
-	 * so we use that, because we need it.
-	 */
-	return syscall.Write(int(f.Fd()), b)
+	return f.Write(b)
 }
 
 const eventSize = 256
