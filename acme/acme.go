@@ -238,30 +238,46 @@ func (w *Win) Addr(format string, args ...interface{}) error {
 // CloseFiles closes all the open files associated with the window w.
 // (These file descriptors are cached across calls to Ctl, etc.)
 func (w *Win) CloseFiles() {
-	w.ctl.Close()
-	w.ctl = nil
+	if w.ctl != nil {
+		w.ctl.Close()
+		w.ctl = nil
+	}
 
-	w.body.Close()
-	w.body = nil
+	if w.body != nil {
+		w.body.Close()
+		w.body = nil
+	}
 
-	w.addr.Close()
-	w.addr = nil
+	if w.addr != nil {
+		w.addr.Close()
+		w.addr = nil
+	}
 
-	w.tag.Close()
-	w.tag = nil
+	if w.tag != nil {
+		w.tag.Close()
+		w.tag = nil
+	}
 
-	w.event.Close()
-	w.event = nil
-	w.ebuf = nil
+	if w.event != nil {
+		w.event.Close()
+		w.event = nil
+		w.ebuf = nil
+	}
 
-	w.data.Close()
-	w.data = nil
+	if w.data != nil {
+		w.data.Close()
+		w.data = nil
+	}
 
-	w.xdata.Close()
-	w.xdata = nil
+	if w.xdata != nil {
+		w.xdata.Close()
+		w.xdata = nil
+	}
 
-	w.errors.Close()
-	w.errors = nil
+	if w.errors != nil {
+		w.errors.Close()
+		w.errors = nil
+	}
 }
 
 // Ctl writes the command format, ... to the window's ctl file.
