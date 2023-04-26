@@ -144,7 +144,7 @@ func reformat(id int, name string, formatter []string) {
 	f.Close()
 	defer os.Remove(tmp)
 
-	diff, _ := exec.Command("9", "diff", name, tmp).CombinedOutput()
+	diff, _ := ExecDiff(name, tmp).CombinedOutput()
 
 	latest, err := w.ReadAll("body")
 	if err != nil {
