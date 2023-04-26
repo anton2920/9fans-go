@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/anton2920/9fans-go/draw"
@@ -125,16 +126,6 @@ type WinSizeInfo struct {
 	TabWidth int
 }
 
-// A LogReader provides read access to the acme log file.
-type LogReader struct {
-	f   *client.Fid
-	buf [8192]byte
-}
-
-func (r *LogReader) Close() error {
-	return r.f.Close()
-}
-
 // A LogEvent is a single event in the acme log file.
 type LogEvent struct {
 	ID   int
@@ -142,51 +133,7 @@ type LogEvent struct {
 	Name string
 }
 
-// Read reads an event from the acme log file.
-func (r *LogReader) Read() (LogEvent, error) {
-	n, err := r.f.Read(r.buf[:])
-	if err != nil {
-		return LogEvent{}, err
-	}
-	f := strings.SplitN(string(r.buf[:n]), " ", 3)
-	if len(f) != 3 {
-		return LogEvent{}, fmt.Errorf("malformed log event")
-	}
-	id, _ := strconv.Atoi(f[0])
-	op := f[1]
-	name := f[2]
-	name = strings.TrimSpace(name)
-	return LogEvent{id, op, name}, nil
-}
-
-// Log returns a reader reading the acme/log file.
-func Log() (*LogReader, error) {
-	fsysOnce.Do(mountAcme)
-	if fsysErr != nil {
-		return nil, fsysErr
-	}
-	f, err := fsys.Open("log", plan9.OREAD)
-	if err != nil {
-		return nil, err
-	}
-	return &LogReader{f: f}, nil
-}
-
-// Windows returns a list of the existing acme windows.
-func Windows() ([]WinInfo, error) {
-	fsysOnce.Do(mountAcme)
-	if fsysErr != nil {
-		return nil, fsysErr
-	}
-	index, err := fsys.Open("index", plan9.OREAD)
-	if err != nil {
-		return nil, err
-	}
-	defer index.Close()
-	data, err := ioutil.ReadAll(index)
-	if err != nil {
-		return nil, err
-	}
+func ParseAcmeIndex(data []byte) ([]WinInfo, error) {
 	var infos []WinInfo
 	for _, line := range strings.Split(string(data), "\n") {
 		if len(line) == 0 {
@@ -212,6 +159,24 @@ func Windows() ([]WinInfo, error) {
 		infos = append(infos, info)
 	}
 	return infos, nil
+}
+
+// Windows returns a list of the existing acme windows.
+func Windows() ([]WinInfo, error) {
+	fsysOnce.Do(mountAcme)
+	if fsysErr != nil {
+		return nil, fsysErr
+	}
+	index, err := fsys.Open("index", plan9.OREAD)
+	if err != nil {
+		return nil, err
+	}
+	data, err := ioutil.ReadAll(index)
+	index.Close()
+	if err != nil {
+		return nil, err
+	}
+	return ParseAcmeIndex(data)
 }
 
 // Show looks and causes acme to show the window with the given name,
@@ -465,7 +430,12 @@ func (w *Win) Write(file string, b []byte) (n int, err error) {
 	if err != nil {
 		return 0, err
 	}
-	return f.Write(b)
+
+	/* NOTE(anton2920): on Plan 9 (*os.File).Write doesn't allow zero-byte writes.
+	 * syscall.Write, on the other hand, doesn't complain about that,
+	 * so we use that, because we need it.
+	 */
+	return syscall.Write(int(f.Fd()), b)
 }
 
 const eventSize = 256

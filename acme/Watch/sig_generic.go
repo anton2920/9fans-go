@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build !linux && !darwin && !freebsd && !netbsd && !openbsd && !solaris
-// +build !linux,!darwin,!freebsd,!netbsd,!openbsd,!solaris
 
 package main
 
@@ -17,6 +16,7 @@ func isolate(cmd *exec.Cmd) {
 }
 
 func quit(cmd *exec.Cmd) {
+	cmd.Process.Signal(os.Interrupt)
 }
 
 func kill(cmd *exec.Cmd) {
