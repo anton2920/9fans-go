@@ -20,7 +20,8 @@
 //
 // The other known extensions and formatters are:
 //
-//	.rs - rustfmt
+//	.c/.h  - cb (plan9)
+//	.rs      - rustfmt (!plan9)
 package main
 
 import (
@@ -42,11 +43,6 @@ var gofmt = flag.Bool("f", false, "format the entire file after Put")
 
 var formatters = map[string][]string{
 	".go": []string{"goimports"},
-}
-
-// Non-Go formatters (only loaded with -f option).
-var otherFormatters = map[string][]string{
-	".rs": []string{"rustfmt", "--emit", "stdout"},
 }
 
 func main() {
