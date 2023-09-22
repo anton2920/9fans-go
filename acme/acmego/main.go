@@ -45,6 +45,13 @@ var formatters = map[string][]string{
 	".go": []string{"goimports"},
 }
 
+// Non-Go formatters (only loaded with -f option).
+var otherFormatters = map[string][]string{
+	".rs": []string{"rustfmt", "--emit", "stdout"},
+	".c":  []string{"cb", "-s"},
+	".h":  []string{"cb", "-s"},
+}
+
 func main() {
 	flag.Parse()
 	if *gofmt {
