@@ -1,4 +1,0 @@
-B
--- out --
- -.
-?blank expected
