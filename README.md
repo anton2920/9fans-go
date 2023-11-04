@@ -1,4 +1,4 @@
-[![Go Reference](https://pkg.go.dev/badge/9fans.net/go.svg)](https://pkg.go.dev/github.com/anton2920/9fans-go)
+[![Go Reference](https://pkg.go.dev/badge/9fans.net/go.svg)](https://pkg.go.dev/github.com/9fans/go)
 
 # Overview
 
@@ -8,15 +8,12 @@ This repository contains packages for interacting with Plan 9 as well as ports o
 
 ## Differences from 9fans.net/go
 
-This fork was modified so useful `acme(1)` applications run on fourth edition of Plan 9.
-
-Currently I've tested:
-
-- [x] `acme/Watch`
-- [x] `acme/acmego`
+I've removed everything except for `Watch` and `acmego`. They were ported to work with `acme(1)` from fourth edition of Plan 9.
 
 # Installation
 
 ```
-$ go install github.com/anton2920/9fans-go/...@latest
+$ export GO111MODULE=off
+$ go get github.com/anton2920/9fans-go/acme/Watch
+$ go get github.com/anton2920/9fans-go/acme/acmego
 ```
