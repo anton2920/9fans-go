@@ -50,6 +50,7 @@ var otherFormatters = map[string][]string{
 	".rs": []string{"rustfmt", "--emit", "stdout"},
 	".c":  []string{"cb", "-s"},
 	".h":  []string{"cb", "-s"},
+	".l":  []string{"cb", "-s"},
 }
 
 func main() {
