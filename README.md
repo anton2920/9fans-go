@@ -10,10 +10,18 @@ This repository contains packages for interacting with Plan 9 as well as ports o
 
 I've removed everything except for `Watch` and `acmego`. They were ported to work with `acme(1)` from fourth edition of Plan 9.
 
-# Installation
+## Installation
+
+For up to Go 1.22:
 
 ```
-$ export GO111MODULE=off
+$ GO111MODULE=off; export GO111MODULES
 $ go get github.com/anton2920/9fans-go/acme/Watch
 $ go get github.com/anton2920/9fans-go/acme/acmego
 ```
+
+Starting from Go 1.22 `go get` no longer works without modules, so you have to clone and build everything by hand.
+
+## Copyright
+
+Pavlovskii Anton, 2023-2024 (MIT). See [LICENSE](LICENSE) for more details.
