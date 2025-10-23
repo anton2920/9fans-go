@@ -10,8 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anton2920/9fans-go/acme"
 	"github.com/anton2920/gofa/ints"
+
+	"github.com/anton2920/9fans-go/acme"
 )
 
 type Line struct {
