@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -361,6 +362,11 @@ func UpdateDisassembly(prog *Program) {
 	prog.Lock()
 	defer prog.Unlock()
 
+	prog.Disassembly = nil
+	prog.Functions = nil
+	prog.Search = nil
+	runtime.GC()
+
 	cmd := exec.Command("go", "tool", "objdump", "-S", prog.Name)
 	disas, err := cmd.CombinedOutput()
 	if err != nil {
@@ -410,6 +416,7 @@ func UpdateDisassembly(prog *Program) {
 
 		prog.Search[fn.File][fn.Lines[0].GoLine] = fn
 	}
+
 }
 
 func MonitorProgram(prog *Program) {
