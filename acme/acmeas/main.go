@@ -353,18 +353,8 @@ func UpdateDisassembly(prog *Program) {
 	}
 	prog.Disassembly = disas
 
-	Assert(bytes.HasPrefix(disas, []byte(Prefix)))
-
-	end := bytes.Index(disas, []byte(Suffix))
-	Assert(end >= 0)
-
-	var fn Function
-	ParseFunction(disas[:end], &fn)
-	prog.Functions = append(prog.Functions, fn)
-
-	for end+2 <= len(disas) {
-		disas = disas[end+2:]
-
+	var end int
+	for ; end+2 <= len(disas); disas = disas[end+2:] {
 		begin := bytes.Index(disas, []byte(Prefix))
 		Assert(begin >= 0)
 
