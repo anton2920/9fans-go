@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	stdbytes "bytes"
 	"log"
 	"os"
 	"os/exec"
@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anton2920/gofa/bytes"
 	"github.com/anton2920/gofa/ints"
 
 	"github.com/anton2920/9fans-go/acme"
@@ -52,14 +53,14 @@ const (
 	Suffix = "\n\n"
 )
 
-func Assert(pred bool) {
-	if !pred {
+func Assert(p bool) {
+	if !p {
 		panic("ASSERTION FAILED")
 	}
 }
 
 func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan<- []byte) {
-	var buf bytes.Buffer
+	var buf stdbytes.Buffer
 	var wName string
 
 	w, err := acme.Open(wID, nil)
@@ -123,7 +124,7 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 					}
 
 					if (len(funcBody) > 0) && (s0 >= f0) && (s1 <= f1) {
-						funcLines := strings.Split(string(funcBody), "\n")
+						funcLines := strings.Split(bytes.AsString(funcBody), "\n")
 						funcLinesSearch := make(map[string][]int)
 						for i := 0; i < len(funcLines); i++ {
 							funcLinesSearch[funcLines[i]] = append(funcLinesSearch[funcLines[i]], i)
@@ -134,7 +135,7 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 
 						fn, ok := prog.Search[wName][funcLines[0]]
 						if ok {
-							selectionLines := strings.Split(string(selection), "\n")
+							selectionLines := strings.Split(bytes.AsString(selection), "\n")
 							if ((len(selectionLines) == 1) && (len(selectionLines[0]) == 0)) || ((s0 == f0) && (s1 == f1)) {
 								dataChan <- fn.Text
 							} else {
@@ -146,7 +147,7 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 								var count int
 								var nl int
 								for count < target {
-									newline := bytes.IndexRune(funcBody[count:], '\n')
+									newline := stdbytes.IndexRune(funcBody[count:], '\n')
 									Assert(newline >= 0)
 
 									count += newline + 1
@@ -154,10 +155,7 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 								}
 								Assert(count == target)
 
-								selectionBegin := nl
-								selectionEnd := nl + len(selectionLines)
-
-								for s := selectionBegin; s < selectionEnd; s++ {
+								for s := nl; s < nl+len(selectionLines); s++ {
 									sl := funcLines[s]
 
 									/* Get indicies into 'funcLines' of all lines that exactly match selected line. */
@@ -238,6 +236,7 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 											for j := 0; (j < len(line.AsmLines)) && (allNOPs); j++ {
 												allNOPs = (allNOPs) && (strings.Index(line.AsmLines[j], "NOP") > 0)
 											}
+
 											if allNOPs {
 												for j := c + 1; j < len(fn.Lines); j++ {
 													if _, ok := funcLinesSearch[fn.Lines[j].GoLine]; !ok {
@@ -317,18 +316,18 @@ func MonitorWindows(prog *Program, dataChan chan<- []byte) {
 }
 
 func ParseFunction(buf []byte, fn *Function) {
-	Assert(bytes.HasPrefix(buf, []byte(Prefix)))
+	Assert(stdbytes.HasPrefix(buf, []byte(Prefix)))
 	buf = buf[len(Prefix)+1:]
 
-	newline := bytes.IndexRune(buf, '\n')
+	newline := stdbytes.IndexRune(buf, '\n')
 	Assert(newline >= 0)
 
-	space := bytes.IndexRune(buf[:newline], ' ')
+	space := stdbytes.IndexRune(buf[:newline], ' ')
 	if space == -1 {
 		space = newline - 1
 	}
-	fn.Name = string(buf[:space])
-	fn.File = string(buf[space+1 : newline])
+	fn.Name = bytes.AsString(buf[:space])
+	fn.File = bytes.AsString(buf[space+1 : newline])
 	buf = buf[newline+1:]
 
 	fn.Text = buf
@@ -336,7 +335,7 @@ func ParseFunction(buf []byte, fn *Function) {
 	var goLine int
 	var asmBegin, asmEnd int
 
-	lines := strings.Split(string(buf), "\n")
+	lines := strings.Split(bytes.AsString(buf), "\n")
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
 
@@ -371,18 +370,18 @@ func UpdateDisassembly(prog *Program) {
 
 	var end int
 	for {
-		begin := bytes.Index(disas, []byte(Prefix))
+		begin := stdbytes.Index(disas, []byte(Prefix))
 		Assert(begin >= 0)
 
-		newline := bytes.IndexRune(disas[begin+1:], '\n')
+		newline := stdbytes.IndexRune(disas[begin+1:], '\n')
 		Assert(newline >= 0)
 		newline += begin + 1
 
-		end = bytes.Index(disas[begin+1:], []byte(Suffix))
+		end = stdbytes.Index(disas[begin+1:], []byte(Suffix))
 		end += begin + 1
 
 		if newline == end {
-			end = bytes.Index(disas[newline+1:], []byte(Suffix))
+			end = stdbytes.Index(disas[newline+1:], []byte(Suffix))
 			if end == -1 {
 				end = len(disas) - begin
 			} else {
@@ -468,7 +467,7 @@ func main() {
 		case event := <-eventChan:
 			switch event.C2 {
 			case 'x', 'X': /* execute. */
-				if string(event.Text) == "Del" {
+				if bytes.AsString(event.Text) == "Del" {
 					win.Del(true)
 					quit = true
 				}
