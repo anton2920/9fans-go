@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anton2920/9fans-go/acme"
+	"github.com/anton2920/gofa/ints"
 )
 
 type Line struct {
@@ -24,7 +25,8 @@ type Function struct {
 	Name string
 	File string
 
-	Lines []Line
+	Lines       []Line
+	LinesSearch map[string][]int
 }
 
 type Program struct {
@@ -121,14 +123,18 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 
 					if (len(funcBody) > 0) && (s0 >= f0) && (s1 <= f1) {
 						funcLines := strings.Split(string(funcBody), "\n")
-						fmt.Printf("[%d]: s=#%d,#%d, f=#%d,#%d %s\n", wID, s0, s1, f0, f1, funcLines[0])
+						funcLinesSearch := make(map[string][]int)
+						for i := 0; i < len(funcLines); i++ {
+							funcLinesSearch[funcLines[i]] = append(funcLinesSearch[funcLines[i]], i)
+						}
 
+						fmt.Printf("[%d]: s=#%d,#%d, f=#%d,#%d %s\n", wID, s0, s1, f0, f1, funcLines[0])
 						prog.RLock()
 
 						fn, ok := prog.Search[wName][funcLines[0]]
 						if ok {
 							selectionLines := strings.Split(string(selection), "\n")
-							if (len(selectionLines) == 1) && (len(selectionLines[0]) == 0) {
+							if ((len(selectionLines) == 1) && (len(selectionLines[0]) == 0)) || ((s0 == f0) && (s1 == f1)) {
 								dataChan <- fn.Text
 							} else {
 								buf.Reset()
@@ -147,13 +153,107 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 								}
 								Assert(count == target)
 
-								//selectionBegin := nl
+								selectionBegin := nl
 								//selectionEnd := nl + len(selectionLines)
+								sl := funcLines[selectionBegin]
 
-								for i := 0; i < len(fn.Lines); i++ {
-									buf.WriteString(fn.Lines[i].GoLine)
-									buf.WriteRune('\n')
+								likes, ok := funcLinesSearch[sl]
+								Assert(ok)
+
+								candidates_, ok := fn.LinesSearch[sl]
+								if ok {
+									var candidates []int
+									candidates = append(candidates, candidates_...)
+									if len(likes) >= 1 {
+										var selectedLike int
+										for i := 0; i < len(likes); i++ {
+											if likes[i] == selectionBegin {
+												selectedLike = i
+											}
+										}
+										if len(candidates) == len(likes) {
+											save := candidates[selectedLike]
+											candidates = candidates[:0]
+											candidates = append(candidates, save)
+										} else {
+											var maxLikeness int
+											var mostLikedCandidates []int
+
+											const window = 5
+											for i := 0; i < len(candidates); i++ {
+												var likeness int
+												c := candidates[i]
+
+												fl := likes[selectedLike]
+												for j := c; (j < len(fn.Lines)) && (j < c+window) && (fl < len(funcLines)); j++ {
+													for len(strings.TrimSpace(funcLines[fl])) == 0 {
+														fl++
+													}
+													if funcLines[fl] == fn.Lines[j].GoLine {
+														likeness++
+													}
+													fl++
+												}
+
+												if likeness > maxLikeness {
+													maxLikeness = likeness
+													mostLikedCandidates = mostLikedCandidates[:0]
+												}
+												if likeness == maxLikeness {
+													mostLikedCandidates = append(mostLikedCandidates, c)
+												}
+											}
+
+											if len(mostLikedCandidates) > 0 {
+												candidates = append(candidates[:0], mostLikedCandidates...)
+											}
+										}
+									}
+									for i := 0; i < len(candidates); i++ {
+										c := candidates[i]
+										if c+1 < len(fn.Lines) {
+											if _, ok := funcLinesSearch[fn.Lines[c+1].GoLine]; !ok {
+												candidates = ints.InsertAt(candidates, c+1, i+1)
+											}
+										}
+									}
+									for i := 0; i < len(candidates); i++ {
+										c := candidates[i]
+										line := fn.Lines[c]
+										if (len(line.AsmLines) == 1) && (strings.Index(line.AsmLines[0], "NOP") > 0) {
+											for j := c + 1; j < len(fn.Lines); j++ {
+												if _, ok := funcLinesSearch[fn.Lines[j].GoLine]; !ok {
+													var found bool
+													for k := 0; k < len(candidates); k++ {
+														if j == candidates[k] {
+															found = true
+														}
+													}
+													if !found {
+														candidates = ints.InsertAt(candidates, j, i+1)
+													}
+													break
+												}
+											}
+										}
+									}
+									for i := 0; i < len(candidates); i++ {
+										line := &fn.Lines[candidates[i]]
+
+										buf.WriteString(line.GoLine)
+										buf.WriteRune('\n')
+										for j := 0; j < len(line.AsmLines); j++ {
+											buf.WriteString(line.AsmLines[j])
+											buf.WriteRune('\n')
+										}
+									}
 								}
+
+								/*
+									for i := 0; i < len(fn.Lines); i++ {
+										fmt.Fprintf(&buf, "%5d: %s\n", i, fn.Lines[i].GoLine)
+									}
+								*/
 
 								dataChan <- buf.Bytes()
 							}
@@ -235,8 +335,12 @@ func ParseFunction(buf []byte, fn *Function) {
 			asmBegin = i + 1
 		}
 	}
-
 	fn.Lines = append(fn.Lines, Line{GoLine: lines[goLine], AsmLines: lines[asmBegin:len(lines)]})
+
+	fn.LinesSearch = make(map[string][]int)
+	for i := 0; i < len(fn.Lines); i++ {
+		fn.LinesSearch[fn.Lines[i].GoLine] = append(fn.LinesSearch[fn.Lines[i].GoLine], i)
+	}
 }
 
 func UpdateDisassembly(prog *Program) {
