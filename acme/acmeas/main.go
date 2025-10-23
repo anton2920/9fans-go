@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -128,7 +127,7 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 							funcLinesSearch[funcLines[i]] = append(funcLinesSearch[funcLines[i]], i)
 						}
 
-						fmt.Printf("[%d]: s=#%d,#%d, f=#%d,#%d %s\n", wID, s0, s1, f0, f1, funcLines[0])
+						// fmt.Printf("[%d]: s=#%d,#%d, f=#%d,#%d %s\n", wID, s0, s1, f0, f1, funcLines[0])
 						prog.RLock()
 
 						fn, ok := prog.Search[wName][funcLines[0]]
@@ -432,7 +431,12 @@ func main() {
 	}
 	win.Name(pwd + "/+acmeas")
 
-	prog := Program{Name: "./acmeas"}
+	name := "./acmeas"
+	if len(os.Args) == 2 {
+		name = os.Args[1]
+	}
+
+	prog := Program{Name: name}
 	go MonitorProgram(&prog)
 
 	dataChan := make(chan []byte)
