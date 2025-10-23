@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -129,7 +128,7 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 							funcLinesSearch[funcLines[i]] = append(funcLinesSearch[funcLines[i]], i)
 						}
 
-						fmt.Printf("[%d]: s=#%d,#%d, f=#%d,#%d %s\n", wID, s0, s1, f0, f1, funcLines[0])
+						// fmt.Printf("[%d]: s=#%d,#%d, f=#%d,#%d %s\n", wID, s0, s1, f0, f1, funcLines[0])
 						prog.RLock()
 
 						fn, ok := prog.Search[wName][funcLines[0]]
@@ -160,13 +159,17 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 								for s := selectionBegin; s < selectionEnd; s++ {
 									sl := funcLines[s]
 
+									/* Get indicies into 'funcLines' of all lines that exactly match selected line. */
 									likes, ok := funcLinesSearch[sl]
 									Assert(ok)
 
+									/* Get indicies into 'fn.Lines' of all disassebly lines that exactly match selected line. */
 									candidates_, ok := fn.LinesSearch[sl]
 									if ok {
 										var candidates []int
 										candidates = append(candidates, candidates_...)
+
+										/* If there are multiple copies of selected line, we need to find the best candidates among disassembly lines. */
 										if len(likes) > 1 {
 											var selectedLike int
 											for i := 0; i < len(likes); i++ {
@@ -174,11 +177,13 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 													selectedLike = i
 												}
 											}
+
+											/* If there are the same number of copies of selected line as disassembly candidates, it probably means that they have one-to-one correspondence with each other. */
 											if len(candidates) == len(likes) {
 												save := candidates[selectedLike]
 												candidates = candidates[:0]
 												candidates = append(candidates, save)
-											} else {
+											} else { /* Else find the most likely candidates by trying to match some lines after selected with some line after a candidate one-by-one. Leave only candidates that matches the most. */
 												var maxLikeness int
 												var mostLikedCandidates []int
 
@@ -212,6 +217,8 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 												}
 											}
 										}
+
+										/* Add next line of disassembly to candidates, if it does not appear anywhere in the program (most likely function has been inlined). */
 										for i := 0; i < len(candidates); i++ {
 											c := candidates[i]
 											if c+1 < len(fn.Lines) {
@@ -220,6 +227,8 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 												}
 											}
 										}
+
+										/* Find closest disassembly line that does not appear anywhere in the program and add it to candidates, if all current line does are NOPs (most likely function has been inlined). */
 										for i := 0; i < len(candidates); i++ {
 											c := candidates[i]
 											line := fn.Lines[c]
@@ -245,6 +254,8 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 												}
 											}
 										}
+
+										/* Display all disassembly candidates .*/
 										for i := 0; i < len(candidates); i++ {
 											line := &fn.Lines[candidates[i]]
 
@@ -257,12 +268,6 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 										}
 									}
 								}
-
-								/*
-									for i := 0; i < len(fn.Lines); i++ {
-										fmt.Fprintf(&buf, "%5d: %s\n", i, fn.Lines[i].GoLine)
-									}
-								*/
 
 								dataChan <- buf.Bytes()
 							}
