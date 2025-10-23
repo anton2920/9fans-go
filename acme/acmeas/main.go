@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 	"sync"
 	"time"
@@ -127,7 +129,7 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 							funcLinesSearch[funcLines[i]] = append(funcLinesSearch[funcLines[i]], i)
 						}
 
-						// fmt.Printf("[%d]: s=#%d,#%d, f=#%d,#%d %s\n", wID, s0, s1, f0, f1, funcLines[0])
+						fmt.Printf("[%d]: s=#%d,#%d, f=#%d,#%d %s\n", wID, s0, s1, f0, f1, funcLines[0])
 						prog.RLock()
 
 						fn, ok := prog.Search[wName][funcLines[0]]
@@ -362,7 +364,7 @@ func UpdateDisassembly(prog *Program) {
 	prog.Disassembly = disas
 
 	var end int
-	for ; end+2 <= len(disas); disas = disas[end+2:] {
+	for {
 		begin := bytes.Index(disas, []byte(Prefix))
 		Assert(begin >= 0)
 
@@ -385,6 +387,11 @@ func UpdateDisassembly(prog *Program) {
 		var fn Function
 		ParseFunction(disas[begin:end], &fn)
 		prog.Functions = append(prog.Functions, fn)
+
+		if end+2 > len(disas) {
+			break
+		}
+		disas = disas[end+2:]
 	}
 
 	prog.Search = make(map[string]map[string]*Function)
@@ -440,12 +447,34 @@ func main() {
 	dataChan := make(chan []byte)
 	go MonitorWindows(&prog, dataChan)
 
-	for data := range dataChan {
-		win.Addr(",")
-		win.Write("data", data)
-		win.Ctl("clean")
-		win.Addr("#0")
-		win.Ctl("dot=addr")
-		win.Ctl("show")
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt)
+	go func() {
+		<-sigChan
+		win.Del(true)
+		os.Exit(0)
+	}()
+
+	eventChan := win.EventChan()
+	var quit bool
+	for !quit {
+		select {
+		case event := <-eventChan:
+			switch event.C2 {
+			case 'x', 'X': /* execute. */
+				if string(event.Text) == "Del" {
+					win.Del(true)
+					quit = true
+				}
+			}
+			win.WriteEvent(event)
+		case data := <-dataChan:
+			win.Addr(",")
+			win.Write("data", data)
+			win.Ctl("clean")
+			win.Addr("#0")
+			win.Ctl("dot=addr")
+			win.Ctl("show")
+		}
 	}
 }
