@@ -7,8 +7,10 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/anton2920/gofa/bytes"
@@ -39,9 +41,10 @@ type Program struct {
 	LastModified time.Time
 
 	Disassembly []byte
-	Functions   []Function
 
-	Search map[string]map[string]*Function
+	LineByAddr map[int64]*Line
+	FuncByName map[string]*Function
+	FuncByFile map[string]map[string]*Function
 }
 
 type WinInfo struct {
@@ -54,15 +57,61 @@ const (
 	Suffix = "\n\n"
 )
 
+var Epoch uint64
+
 func Assert(p bool) {
 	if !p {
 		panic("ASSERTION FAILED")
 	}
 }
 
+func FindReference(win *acme.Win, event *acme.Event, prog *Program, dataChan chan<- []byte) ([]byte, bool) {
+	win.Addr("#%d-/ /,#%d/,|	/", event.Q0, event.Q1)
+	data, err := win.ReadAll("xdata")
+	if (err != nil) || (len(data) <= 2) {
+		return nil, false
+	}
+	selection := strings.Trim(strings.TrimSpace(bytes.AsString(data)), ",")
+
+	fn, ok := prog.FuncByName[selection]
+	if ok {
+		return fn.Text, true
+	}
+
+	win.Addr("#0")
+	contents, err := win.ReadAll("data")
+	if err != nil {
+		return nil, false
+	}
+	if stdbytes.Count(contents, data) > 1 {
+		return nil, false
+	}
+
+	addr, err := strconv.ParseInt(selection[2:], 16, 64)
+	if err != nil {
+		return nil, false
+	}
+	line, ok := prog.LineByAddr[addr]
+	if ok {
+		var buf stdbytes.Buffer
+
+		buf.WriteString(line.GoLine)
+		buf.WriteRune('\n')
+		for i := 0; i < len(line.AsmLines); i++ {
+			buf.WriteString(line.AsmLines[i])
+			buf.WriteRune('\n')
+		}
+
+		return buf.Bytes(), true
+	}
+
+	return nil, false
+}
+
 func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan<- []byte) {
 	var buf stdbytes.Buffer
 	var wName string
+	var epoch uint64
 
 	w, err := acme.Open(wID, nil)
 	if err != nil {
@@ -100,7 +149,7 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 				}
 
 				/* If selection changed. */
-				if (m0 != s0) || (m1 != s1) {
+				if (m0 != s0) || (m1 != s1) || (atomic.LoadUint64(&Epoch) != epoch) {
 					s0, s1 = m0, m1
 
 					selection, err := w.ReadAll("xdata")
@@ -134,7 +183,7 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 						// fmt.Printf("[%d]: s=#%d,#%d, f=#%d,#%d %s\n", wID, s0, s1, f0, f1, funcLines[0])
 						prog.RLock()
 
-						fn, ok := prog.Search[wName][funcLines[0]]
+						fn, ok := prog.FuncByFile[wName][funcLines[0]]
 						if ok {
 							selectionLines := strings.Split(bytes.AsString(selection), "\n")
 							if ((len(selectionLines) == 1) && (len(selectionLines[0]) == 0)) || ((s0 == f0) && (s1 == f1)) {
@@ -171,15 +220,14 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 
 										/* If there are multiple copies of selected line, we need to find the best candidates among disassembly lines. */
 										if len(likes) > 1 {
-											var selectedLike int
-											for i := 0; i < len(likes); i++ {
-												if likes[i] == s {
-													selectedLike = i
-												}
-											}
-
 											/* If there are the same number of copies of selected line as disassembly candidates, it probably means that they have one-to-one correspondence with each other. */
 											if len(candidates) == len(likes) {
+												var selectedLike int
+												for i := 0; i < len(likes); i++ {
+													if likes[i] == s {
+														selectedLike = i
+													}
+												}
 												save := candidates[selectedLike]
 												candidates = candidates[:0]
 												candidates = append(candidates, save)
@@ -192,7 +240,7 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 													var likeness int
 													c := candidates[i]
 
-													fl := likes[selectedLike]
+													fl := s
 													for j := c; (j < len(fn.Lines)) && (j < c+window) && (fl < len(funcLines)); j++ {
 														for len(strings.TrimSpace(funcLines[fl])) == 0 {
 															fl++
@@ -270,6 +318,7 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 									}
 								}
 
+								epoch = atomic.LoadUint64(&Epoch) + 1
 								dataChan <- buf.Bytes()
 							}
 						}
@@ -358,13 +407,16 @@ func ParseFunction(buf []byte, fn *Function) {
 	}
 }
 
-func UpdateDisassembly(prog *Program) {
+func UpdateDisassembly(prog *Program, dataChan chan<- []byte) {
 	prog.Lock()
 	defer prog.Unlock()
 
+	dataChan <- []byte("Updating disassembly...")
+
 	prog.Disassembly = nil
-	prog.Functions = nil
-	prog.Search = nil
+	prog.FuncByName = nil
+	prog.LineByAddr = nil
+	prog.FuncByFile = nil
 	runtime.GC()
 
 	cmd := exec.Command("go", "tool", "objdump", "-S", prog.Name)
@@ -373,6 +425,8 @@ func UpdateDisassembly(prog *Program) {
 		log.Fatalf("Failed to get disassembly output: %v", err)
 	}
 	prog.Disassembly = disas
+	prog.LineByAddr = make(map[int64]*Line)
+	prog.FuncByName = make(map[string]*Function)
 
 	var end int
 	for {
@@ -397,7 +451,18 @@ func UpdateDisassembly(prog *Program) {
 
 		var fn Function
 		ParseFunction(disas[begin:end], &fn)
-		prog.Functions = append(prog.Functions, fn)
+		prog.FuncByName[fn.Name] = &fn
+
+		for i := 0; i < len(fn.Lines); i++ {
+			line := &fn.Lines[i]
+
+			for j := 0; j < len(line.AsmLines); j++ {
+				al := line.AsmLines[j][4:]
+				addr, err := strconv.ParseInt(al[:strings.IndexRune(al, '\t')], 16, 64)
+				Assert(err == nil)
+				prog.LineByAddr[addr] = line
+			}
+		}
 
 		if end+2 > len(disas) {
 			break
@@ -405,21 +470,19 @@ func UpdateDisassembly(prog *Program) {
 		disas = disas[end+2:]
 	}
 
-	prog.Search = make(map[string]map[string]*Function)
-	for i := 0; i < len(prog.Functions); i++ {
-		fn := &prog.Functions[i]
-
-		m := prog.Search[fn.File]
+	prog.FuncByFile = make(map[string]map[string]*Function)
+	for _, fn := range prog.FuncByName {
+		m := prog.FuncByFile[fn.File]
 		if m == nil {
-			prog.Search[fn.File] = make(map[string]*Function)
+			prog.FuncByFile[fn.File] = make(map[string]*Function)
 		}
-
-		prog.Search[fn.File][fn.Lines[0].GoLine] = fn
+		prog.FuncByFile[fn.File][fn.Lines[0].GoLine] = fn
 	}
 
+	dataChan <- []byte("Ready")
 }
 
-func MonitorProgram(prog *Program) {
+func MonitorProgram(prog *Program, dataChan chan<- []byte) {
 	for {
 		st, err := os.Stat(prog.Name)
 		if err != nil {
@@ -429,11 +492,16 @@ func MonitorProgram(prog *Program) {
 		lastModified := st.ModTime()
 		if lastModified.After(prog.LastModified) {
 			prog.LastModified = lastModified
-			UpdateDisassembly(prog)
+			UpdateDisassembly(prog, dataChan)
 		}
 
 		time.Sleep(200 * time.Millisecond)
 	}
+}
+
+func ClearTag(win *acme.Win) {
+	win.Ctl("cleartag")
+	win.Write("tag", []byte(" Look "))
 }
 
 func main() {
@@ -446,17 +514,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create new acme window: %v", err)
 	}
-	win.Name(pwd + "/+acmeas")
+	defer win.CloseFiles()
 
+	win.Name(pwd + "/+acmeas")
 	name := "./acmeas"
 	if len(os.Args) == 2 {
 		name = os.Args[1]
 	}
 
 	prog := Program{Name: name}
-	go MonitorProgram(&prog)
-
-	dataChan := make(chan []byte)
+	dataChan := make(chan []byte, 1)
+	go MonitorProgram(&prog, dataChan)
 	go MonitorWindows(&prog, dataChan)
 
 	sigChan := make(chan os.Signal, 1)
@@ -467,20 +535,57 @@ func main() {
 		os.Exit(0)
 	}()
 
+	var history [][]byte
+	var current int
+
 	eventChan := win.EventChan()
 	var quit bool
 	for !quit {
 		select {
 		case event := <-eventChan:
+			// fmt.Printf("C1=%q C2=%q Q=#%d,#%d OrigQ=#%d,#%d Flag=%d Nb=%d Nr=%d Text=%q Arg=%q Loc=%q\n", event.C1, event.C2, event.Q0, event.Q1, event.OrigQ0, event.OrigQ1, event.Flag, event.Nb, event.Nr, event.Text, event.Arg, event.Loc)
 			switch event.C2 {
+			case 'L': /* look. */
+				if ref, ok := FindReference(win, event, &prog, dataChan); ok {
+					win.Addr("#0")
+					data, err := win.ReadAll("data")
+					if err != nil {
+						continue
+					}
+					history = history[:current]
+					history = append(history, data, ref)
+					current++
+
+					ClearTag(win)
+					win.Write("tag", []byte("Back "))
+
+					dataChan <- ref
+					continue
+				}
 			case 'x', 'X': /* execute. */
-				if bytes.AsString(event.Text) == "Del" {
+				switch bytes.AsString(event.Text) {
+				case "Back":
+					current--
+					dataChan <- history[current]
+				case "Forward":
+					current++
+					dataChan <- history[current]
+				case "Del":
 					win.Del(true)
 					quit = true
+				}
+
+				ClearTag(win)
+				if current > 0 {
+					win.Write("tag", []byte("Back "))
+				}
+				if current < len(history) {
+					win.Write("tag", []byte("Forward "))
 				}
 			}
 			win.WriteEvent(event)
 		case data := <-dataChan:
+			atomic.AddUint64(&Epoch, 1)
 			win.Addr(",")
 			win.Write("data", data)
 			win.Ctl("clean")
