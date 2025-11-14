@@ -2,10 +2,13 @@ package main
 
 import (
 	stdbytes "bytes"
+	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -108,8 +111,148 @@ func FindReference(win *acme.Win, event *acme.Event, prog *Program, dataChan cha
 	return nil, false
 }
 
+func GetSelectionDisassembly(prog *Program, filename string, funcLines []string, selectionLines []string, selectAll bool) []byte {
+	fn, ok := prog.FuncByFile[filename][funcLines[0]]
+	if ok {
+		funcLinesSearch := make(map[string][]int)
+		for i := 0; i < len(funcLines); i++ {
+			funcLinesSearch[funcLines[i]] = append(funcLinesSearch[funcLines[i]], i)
+		}
+
+		if (selectAll) || ((len(selectionLines) == 1) && (len(selectionLines[0]) == 0)) {
+			return fn.Text
+		} else {
+			var buf stdbytes.Buffer
+
+			var nl int
+			for i := 0; i < len(funcLines); i++ {
+				if selectionLines[0] == funcLines[i] {
+					nl = i
+					break
+				}
+			}
+
+			for s := nl; s < nl+len(selectionLines); s++ {
+				sl := funcLines[s]
+
+				/* Get indicies into 'funcLines' of all lines that exactly match selected line. */
+				likes, ok := funcLinesSearch[sl]
+				Assert(ok)
+
+				/* Get indicies into 'fn.Lines' of all disassebly lines that exactly match selected line. */
+				candidates_, ok := fn.LinesSearch[sl]
+				if ok {
+					var candidates []int
+					candidates = append(candidates, candidates_...)
+
+					/* If there are multiple copies of selected line, we need to find the best candidates among disassembly lines. */
+					if len(likes) > 1 {
+						/* If there are the same number of copies of selected line as disassembly candidates, it probably means that they have one-to-one correspondence with each other. */
+						if len(candidates) == len(likes) {
+							var selectedLike int
+							for i := 0; i < len(likes); i++ {
+								if likes[i] == s {
+									selectedLike = i
+								}
+							}
+							save := candidates[selectedLike]
+							candidates = candidates[:0]
+							candidates = append(candidates, save)
+						} else { /* Else find the most likely candidates by trying to match some lines after selected with some line after a candidate one-by-one. Leave only candidates that matches the most. */
+							var maxLikeness int
+							var mostLikedCandidates []int
+
+							const window = 5
+							for i := 0; i < len(candidates); i++ {
+								var likeness int
+								c := candidates[i]
+
+								fl := s
+								for j := c; (j < len(fn.Lines)) && (j < c+window) && (fl < len(funcLines)); j++ {
+									for len(strings.TrimSpace(funcLines[fl])) == 0 {
+										fl++
+									}
+									if funcLines[fl] == fn.Lines[j].GoLine {
+										likeness++
+									}
+									fl++
+								}
+
+								if likeness > maxLikeness {
+									maxLikeness = likeness
+									mostLikedCandidates = mostLikedCandidates[:0]
+								}
+								if likeness == maxLikeness {
+									mostLikedCandidates = append(mostLikedCandidates, c)
+								}
+							}
+
+							if len(mostLikedCandidates) > 0 {
+								candidates = append(candidates[:0], mostLikedCandidates...)
+							}
+						}
+					}
+
+					/* Add next line of disassembly to candidates, if it does not appear anywhere in the program (most likely function has been inlined). */
+					for i := 0; i < len(candidates); i++ {
+						c := candidates[i]
+						if c+1 < len(fn.Lines) {
+							if _, ok := funcLinesSearch[fn.Lines[c+1].GoLine]; !ok {
+								candidates = ints.InsertAt(candidates, c+1, i+1)
+							}
+						}
+					}
+
+					/* Find closest disassembly line that does not appear anywhere in the program and add it to candidates, if all current line does are NOPs (most likely function has been inlined). */
+					for i := 0; i < len(candidates); i++ {
+						c := candidates[i]
+						line := fn.Lines[c]
+
+						allNOPs := true
+						for j := 0; (j < len(line.AsmLines)) && (allNOPs); j++ {
+							allNOPs = (allNOPs) && (strings.Index(line.AsmLines[j], "NOP") > 0)
+						}
+
+						if allNOPs {
+							for j := c + 1; j < len(fn.Lines); j++ {
+								if _, ok := funcLinesSearch[fn.Lines[j].GoLine]; !ok {
+									var found bool
+									for k := 0; k < len(candidates); k++ {
+										if j == candidates[k] {
+											found = true
+										}
+									}
+									if !found {
+										candidates = ints.InsertAt(candidates, j, i+1)
+									}
+									break
+								}
+							}
+						}
+					}
+
+					/* Display all disassembly candidates .*/
+					for i := 0; i < len(candidates); i++ {
+						line := &fn.Lines[candidates[i]]
+
+						buf.WriteString(line.GoLine)
+						buf.WriteRune('\n')
+						for j := 0; j < len(line.AsmLines); j++ {
+							buf.WriteString(line.AsmLines[j])
+							buf.WriteRune('\n')
+						}
+					}
+				}
+			}
+
+			return buf.Bytes()
+		}
+	}
+
+	return nil
+}
+
 func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan<- []byte) {
-	var buf stdbytes.Buffer
 	var wName string
 	var epoch uint64
 
@@ -175,154 +318,15 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 
 					if (len(funcBody) > 0) && (s0 >= f0) && (s1 <= f1) {
 						funcLines := strings.Split(bytes.AsString(funcBody), "\n")
-						funcLinesSearch := make(map[string][]int)
-						for i := 0; i < len(funcLines); i++ {
-							funcLinesSearch[funcLines[i]] = append(funcLinesSearch[funcLines[i]], i)
-						}
-
+						selectionLines := strings.Split(bytes.AsString(selection), "\n")
 						// fmt.Printf("[%d]: s=#%d,#%d, f=#%d,#%d %s\n", wID, s0, s1, f0, f1, funcLines[0])
+
 						prog.RLock()
-
-						fn, ok := prog.FuncByFile[wName][funcLines[0]]
-						if ok {
-							selectionLines := strings.Split(bytes.AsString(selection), "\n")
-							if ((len(selectionLines) == 1) && (len(selectionLines[0]) == 0)) || ((s0 == f0) && (s1 == f1)) {
-								dataChan <- fn.Text
-							} else {
-								buf.Reset()
-
-								target := s0 - f0
-								Assert(target >= 0)
-
-								var count int
-								var nl int
-								for count < target {
-									newline := stdbytes.IndexRune(funcBody[count:], '\n')
-									Assert(newline >= 0)
-
-									count += newline + 1
-									nl++
-								}
-								Assert(count == target)
-
-								for s := nl; s < nl+len(selectionLines); s++ {
-									sl := funcLines[s]
-
-									/* Get indicies into 'funcLines' of all lines that exactly match selected line. */
-									likes, ok := funcLinesSearch[sl]
-									Assert(ok)
-
-									/* Get indicies into 'fn.Lines' of all disassebly lines that exactly match selected line. */
-									candidates_, ok := fn.LinesSearch[sl]
-									if ok {
-										var candidates []int
-										candidates = append(candidates, candidates_...)
-
-										/* If there are multiple copies of selected line, we need to find the best candidates among disassembly lines. */
-										if len(likes) > 1 {
-											/* If there are the same number of copies of selected line as disassembly candidates, it probably means that they have one-to-one correspondence with each other. */
-											if len(candidates) == len(likes) {
-												var selectedLike int
-												for i := 0; i < len(likes); i++ {
-													if likes[i] == s {
-														selectedLike = i
-													}
-												}
-												save := candidates[selectedLike]
-												candidates = candidates[:0]
-												candidates = append(candidates, save)
-											} else { /* Else find the most likely candidates by trying to match some lines after selected with some line after a candidate one-by-one. Leave only candidates that matches the most. */
-												var maxLikeness int
-												var mostLikedCandidates []int
-
-												const window = 5
-												for i := 0; i < len(candidates); i++ {
-													var likeness int
-													c := candidates[i]
-
-													fl := s
-													for j := c; (j < len(fn.Lines)) && (j < c+window) && (fl < len(funcLines)); j++ {
-														for len(strings.TrimSpace(funcLines[fl])) == 0 {
-															fl++
-														}
-														if funcLines[fl] == fn.Lines[j].GoLine {
-															likeness++
-														}
-														fl++
-													}
-
-													if likeness > maxLikeness {
-														maxLikeness = likeness
-														mostLikedCandidates = mostLikedCandidates[:0]
-													}
-													if likeness == maxLikeness {
-														mostLikedCandidates = append(mostLikedCandidates, c)
-													}
-												}
-
-												if len(mostLikedCandidates) > 0 {
-													candidates = append(candidates[:0], mostLikedCandidates...)
-												}
-											}
-										}
-
-										/* Add next line of disassembly to candidates, if it does not appear anywhere in the program (most likely function has been inlined). */
-										for i := 0; i < len(candidates); i++ {
-											c := candidates[i]
-											if c+1 < len(fn.Lines) {
-												if _, ok := funcLinesSearch[fn.Lines[c+1].GoLine]; !ok {
-													candidates = ints.InsertAt(candidates, c+1, i+1)
-												}
-											}
-										}
-
-										/* Find closest disassembly line that does not appear anywhere in the program and add it to candidates, if all current line does are NOPs (most likely function has been inlined). */
-										for i := 0; i < len(candidates); i++ {
-											c := candidates[i]
-											line := fn.Lines[c]
-
-											allNOPs := true
-											for j := 0; (j < len(line.AsmLines)) && (allNOPs); j++ {
-												allNOPs = (allNOPs) && (strings.Index(line.AsmLines[j], "NOP") > 0)
-											}
-
-											if allNOPs {
-												for j := c + 1; j < len(fn.Lines); j++ {
-													if _, ok := funcLinesSearch[fn.Lines[j].GoLine]; !ok {
-														var found bool
-														for k := 0; k < len(candidates); k++ {
-															if j == candidates[k] {
-																found = true
-															}
-														}
-														if !found {
-															candidates = ints.InsertAt(candidates, j, i+1)
-														}
-														break
-													}
-												}
-											}
-										}
-
-										/* Display all disassembly candidates .*/
-										for i := 0; i < len(candidates); i++ {
-											line := &fn.Lines[candidates[i]]
-
-											buf.WriteString(line.GoLine)
-											buf.WriteRune('\n')
-											for j := 0; j < len(line.AsmLines); j++ {
-												buf.WriteString(line.AsmLines[j])
-												buf.WriteRune('\n')
-											}
-										}
-									}
-								}
-
-								epoch = atomic.LoadUint64(&Epoch) + 1
-								dataChan <- buf.Bytes()
-							}
+						disas := GetSelectionDisassembly(prog, wName, funcLines, selectionLines, (s0 == f0) && (s1 == f1))
+						if len(disas) > 0 {
+							epoch = atomic.LoadUint64(&Epoch) + 1
+							dataChan <- disas
 						}
-
 						prog.RUnlock()
 					}
 				}
@@ -407,11 +411,9 @@ func ParseFunction(buf []byte, fn *Function) {
 	}
 }
 
-func UpdateDisassembly(prog *Program, dataChan chan<- []byte) {
+func UpdateDisassembly(prog *Program) {
 	prog.Lock()
 	defer prog.Unlock()
-
-	dataChan <- []byte("Updating disassembly...")
 
 	prog.Disassembly = nil
 	prog.FuncByName = nil
@@ -478,8 +480,6 @@ func UpdateDisassembly(prog *Program, dataChan chan<- []byte) {
 		}
 		prog.FuncByFile[fn.File][fn.Lines[0].GoLine] = fn
 	}
-
-	dataChan <- []byte("Ready")
 }
 
 func MonitorProgram(prog *Program, dataChan chan<- []byte) {
@@ -492,7 +492,10 @@ func MonitorProgram(prog *Program, dataChan chan<- []byte) {
 		lastModified := st.ModTime()
 		if lastModified.After(prog.LastModified) {
 			prog.LastModified = lastModified
-			UpdateDisassembly(prog, dataChan)
+
+			dataChan <- []byte("Updating disassembly...")
+			UpdateDisassembly(prog)
+			dataChan <- []byte("Ready")
 		}
 
 		time.Sleep(200 * time.Millisecond)
@@ -514,28 +517,18 @@ func WriteBody(win *acme.Win, data []byte) {
 	win.Ctl("show")
 }
 
-func main() {
-	pwd, _ := os.Getwd()
-	if pwd[len(pwd)-1] == '/' {
-		pwd = pwd[:len(pwd)-1]
-	}
-
+func WinMode(prog *Program) error {
 	win, err := acme.New()
 	if err != nil {
-		log.Fatalf("Failed to create new acme window: %v", err)
+		return fmt.Errorf("failed to create new acme window: %v", err)
 	}
 	defer win.CloseFiles()
 
-	win.Name(pwd + "/+acmeas")
-	name := "./acmeas"
-	if len(os.Args) == 2 {
-		name = os.Args[1]
-	}
+	win.Name(filepath.Dir(prog.Name) + "/+acmeas")
 
-	prog := Program{Name: name}
 	dataChan := make(chan []byte)
-	go MonitorProgram(&prog, dataChan)
-	go MonitorWindows(&prog, dataChan)
+	go MonitorProgram(prog, dataChan)
+	go MonitorWindows(prog, dataChan)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
@@ -556,7 +549,7 @@ func main() {
 			// fmt.Printf("C1=%q C2=%q Q=#%d,#%d OrigQ=#%d,#%d Flag=%d Nb=%d Nr=%d Text=%q Arg=%q Loc=%q\n", event.C1, event.C2, event.Q0, event.Q1, event.OrigQ0, event.OrigQ1, event.Flag, event.Nb, event.Nr, event.Text, event.Arg, event.Loc)
 			switch event.C2 {
 			case 'L': /* look. */
-				if ref, ok := FindReference(win, event, &prog, dataChan); ok {
+				if ref, ok := FindReference(win, event, prog, dataChan); ok {
 					win.Addr("#0")
 					data, err := win.ReadAll("data")
 					if err != nil {
@@ -601,5 +594,102 @@ func main() {
 			ClearTag(win)
 			WriteBody(win, data)
 		}
+	}
+
+	return nil
+}
+
+func HeadlessMode(prog *Program) error {
+	UpdateDisassembly(prog)
+
+	for i := 2; i < len(os.Args); i++ {
+		target := os.Args[i]
+
+		name, numbers, ok := strings.Cut(target, ":")
+		path, err := filepath.Abs(name)
+		if err != nil {
+			return fmt.Errorf("failed to resove path for %q: %v", name, err)
+		}
+
+		if !ok {
+			funcs := prog.FuncByFile[path]
+			for _, fn := range funcs {
+				fmt.Printf("%s\n", fn.Text)
+			}
+		} else {
+			f, err := os.Open(path)
+			if err != nil {
+				return fmt.Errorf("failed to open file %q: %v", name, err)
+			}
+
+			contents, err := io.ReadAll(f)
+			if err != nil {
+				return fmt.Errorf("failed to read entire file %q: %v", name, err)
+			}
+			lines := strings.Split(strings.TrimSpace(bytes.AsString(contents)), "\n")
+
+			begin, end, ok := strings.Cut(numbers, "-")
+			if !ok {
+				end = begin
+			}
+			selectionBegin, err := strconv.Atoi(begin)
+			if err != nil {
+				return fmt.Errorf("invalid selection begin line number %q: %v", begin, err)
+			}
+			if (selectionBegin < 0) || (selectionBegin >= len(lines)) {
+				return fmt.Errorf("selection begin line number is out of range [%d;%d]", 0, len(lines))
+			}
+			selectionEnd, err := strconv.Atoi(end)
+			if err != nil {
+				return fmt.Errorf("invalid selection end line number %q: %v", end, err)
+			}
+			if (selectionEnd < 0) || (selectionEnd >= len(lines)) {
+				return fmt.Errorf("selection end line number is out of range [%d;%d]", 0, len(lines))
+			}
+			selectionLines := lines[selectionBegin-1 : selectionEnd]
+
+			var funcBegin, funcEnd int
+			for i := selectionBegin; i >= 0; i-- {
+				if strings.HasPrefix(lines[i], "func") {
+					funcBegin = i
+					break
+				}
+			}
+			for i := selectionBegin; i < len(lines); i++ {
+				if lines[i] == "}" {
+					funcEnd = i + 1
+					break
+				}
+			}
+			funcLines := lines[funcBegin:funcEnd]
+
+			if disas := GetSelectionDisassembly(prog, path, funcLines, selectionLines, false); len(disas) > 0 {
+				fmt.Printf("%s\n", disas)
+			}
+		}
+	}
+
+	return nil
+}
+
+func main() {
+	name := "./acmeas"
+	if len(os.Args) >= 2 {
+		name = os.Args[1]
+	}
+
+	path, err := filepath.Abs(name)
+	if err != nil {
+		log.Fatalf("Failed to get absolute path for program: %v", err)
+	}
+	prog := Program{Name: path}
+
+	if len(os.Args) <= 2 {
+		err = WinMode(&prog)
+	} else {
+		err = HeadlessMode(&prog)
+	}
+	if err != nil {
+		log.Fatalf("acmeas: %v", err)
 	}
 }
