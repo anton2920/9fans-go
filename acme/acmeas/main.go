@@ -504,6 +504,16 @@ func ClearTag(win *acme.Win) {
 	win.Write("tag", []byte(" Look "))
 }
 
+func WriteBody(win *acme.Win, data []byte) {
+	atomic.AddUint64(&Epoch, 1)
+	win.Addr(",")
+	win.Write("data", data)
+	win.Ctl("clean")
+	win.Addr("#0")
+	win.Ctl("dot=addr")
+	win.Ctl("show")
+}
+
 func main() {
 	pwd, _ := os.Getwd()
 	if pwd[len(pwd)-1] == '/' {
@@ -523,7 +533,7 @@ func main() {
 	}
 
 	prog := Program{Name: name}
-	dataChan := make(chan []byte, 1)
+	dataChan := make(chan []byte)
 	go MonitorProgram(&prog, dataChan)
 	go MonitorWindows(&prog, dataChan)
 
@@ -559,17 +569,17 @@ func main() {
 					ClearTag(win)
 					win.Write("tag", []byte("Back "))
 
-					dataChan <- ref
+					WriteBody(win, ref)
 					continue
 				}
 			case 'x', 'X': /* execute. */
 				switch bytes.AsString(event.Text) {
 				case "Back":
 					current--
-					dataChan <- history[current]
+					WriteBody(win, history[current])
 				case "Forward":
 					current++
-					dataChan <- history[current]
+					WriteBody(win, history[current])
 				case "Del":
 					win.Del(true)
 					quit = true
@@ -579,19 +589,17 @@ func main() {
 				if current > 0 {
 					win.Write("tag", []byte("Back "))
 				}
-				if current < len(history) {
+				if current < len(history)-1 {
 					win.Write("tag", []byte("Forward "))
 				}
 			}
 			win.WriteEvent(event)
 		case data := <-dataChan:
-			atomic.AddUint64(&Epoch, 1)
-			win.Addr(",")
-			win.Write("data", data)
-			win.Ctl("clean")
-			win.Addr("#0")
-			win.Ctl("dot=addr")
-			win.Ctl("show")
+			history = history[:0]
+			current = 0
+
+			ClearTag(win)
+			WriteBody(win, data)
 		}
 	}
 }
