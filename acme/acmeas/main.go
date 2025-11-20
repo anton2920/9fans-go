@@ -495,7 +495,7 @@ func MonitorProgram(prog *Program, dataChan chan<- []byte) {
 
 			dataChan <- []byte("Updating disassembly...")
 			UpdateDisassembly(prog)
-			dataChan <- []byte("Ready")
+			dataChan <- []byte("Ready!")
 		}
 
 		time.Sleep(200 * time.Millisecond)
