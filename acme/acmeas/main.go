@@ -11,13 +11,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
+	stdstrings "strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/anton2920/gofa/bytes"
 	"github.com/anton2920/gofa/ints"
+	"github.com/anton2920/gofa/strings"
 
 	"github.com/anton2920/9fans-go/acme"
 )
@@ -61,10 +62,7 @@ type HistoryItem struct {
 	Q1   int
 }
 
-const (
-	Prefix = "TEXT"
-	Suffix = "\n\n"
-)
+const Prefix = "TEXT"
 
 var Epoch uint64
 
@@ -80,7 +78,7 @@ func FindReference(win *acme.Win, event *acme.Event, prog *Program, dataChan cha
 	if (err != nil) || (len(data) <= 2) {
 		return nil, false
 	}
-	selection := strings.Trim(strings.TrimSpace(bytes.AsString(data)), ",")
+	selection := stdstrings.Trim(stdstrings.TrimSpace(bytes.AsString(data)), ",")
 
 	fn, ok := prog.FuncByName[selection]
 	if ok {
@@ -175,7 +173,7 @@ func GetSelectionDisassembly(prog *Program, filename string, funcLines []string,
 
 								fl := s
 								for j := c; (j < len(fn.Lines)) && (j < c+window) && (fl < len(funcLines)); j++ {
-									for len(strings.TrimSpace(funcLines[fl])) == 0 {
+									for len(stdstrings.TrimSpace(funcLines[fl])) == 0 {
 										fl++
 									}
 									if funcLines[fl] == fn.Lines[j].GoLine {
@@ -216,7 +214,7 @@ func GetSelectionDisassembly(prog *Program, filename string, funcLines []string,
 
 						allNOPs := true
 						for j := 0; (j < len(line.AsmLines)) && (allNOPs); j++ {
-							allNOPs = (allNOPs) && (strings.Index(line.AsmLines[j], "NOP") > 0)
+							allNOPs = (allNOPs) && (stdstrings.Index(line.AsmLines[j], "NOP") > 0)
 						}
 
 						if allNOPs {
@@ -323,8 +321,8 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 					}
 
 					if (len(funcBody) > 0) && (s0 >= f0) && (s1 <= f1) {
-						funcLines := strings.Split(bytes.AsString(funcBody), "\n")
-						selectionLines := strings.Split(bytes.AsString(selection), "\n")
+						funcLines := stdstrings.Split(bytes.AsString(funcBody), "\n")
+						selectionLines := stdstrings.Split(bytes.AsString(selection), "\n")
 						// fmt.Printf("[%d]: s=#%d,#%d, f=#%d,#%d %s\n", wID, s0, s1, f0, f1, funcLines[0])
 
 						prog.RLock()
@@ -362,7 +360,7 @@ func MonitorWindows(prog *Program, dataChan chan<- []byte) {
 					info.NameChan <- w.Name
 				}
 			} else {
-				if strings.HasSuffix(w.Name, ".go") {
+				if stdstrings.HasSuffix(w.Name, ".go") {
 					nameChan := make(chan string, 1)
 					nameChan <- w.Name
 					windows[w.ID] = &WinInfo{Name: w.Name, NameChan: nameChan}
@@ -395,21 +393,28 @@ func ParseFunction(buf []byte, fn *Function) {
 	var goLine int
 	var asmBegin, asmEnd int
 
-	lines := strings.Split(bytes.AsString(buf), "\n")
+	lines := stdstrings.Split(bytes.AsString(buf), "\n")
+	for i := 0; i < len(lines)-1; i++ {
+		if len(lines[i]) == 0 {
+			lines = strings.RemoveAt(lines, i)
+			i--
+		}
+	}
+
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
 
-		hasPrefix := strings.HasPrefix(line, "  0x")
+		hasPrefix := strings.StartsWith(line, "  0x")
 		if !hasPrefix {
 			asmEnd = i
 			if asmEnd > 0 {
-				fn.Lines = append(fn.Lines, Line{GoLine: lines[goLine], AsmLines: lines[asmBegin:asmEnd]})
+				fn.Lines = append(fn.Lines, Line{GoLine: lines[goLine], AsmLines: lines[ints.Or(asmBegin, goLine+1):asmEnd]})
 			}
 			goLine = i
 			asmBegin = i + 1
 		}
 	}
-	fn.Lines = append(fn.Lines, Line{GoLine: lines[goLine], AsmLines: lines[asmBegin:len(lines)]})
+	fn.Lines = append(fn.Lines, Line{GoLine: lines[goLine], AsmLines: lines[ints.Or(asmBegin, goLine+1):len(lines)]})
 
 	fn.LinesSearch = make(map[string][]int)
 	for i := 0; i < len(fn.Lines); i++ {
@@ -441,20 +446,11 @@ func UpdateDisassembly(prog *Program) {
 		begin := stdbytes.Index(disas, []byte(Prefix))
 		Assert(begin >= 0)
 
-		newline := stdbytes.IndexRune(disas[begin+1:], '\n')
-		Assert(newline >= 0)
-		newline += begin + 1
-
-		end = stdbytes.Index(disas[begin+1:], []byte(Suffix))
-		end += begin + 1
-
-		if newline == end {
-			end = stdbytes.Index(disas[newline+1:], []byte(Suffix))
-			if end == -1 {
-				end = len(disas) - begin
-			} else {
-				end += newline + 1
-			}
+		end = stdbytes.Index(disas[begin+1:], []byte(Prefix))
+		if end == -1 {
+			end = len(disas)
+		} else {
+			end += begin + 1
 		}
 
 		var fn Function
@@ -466,16 +462,16 @@ func UpdateDisassembly(prog *Program) {
 
 			for j := 0; j < len(line.AsmLines); j++ {
 				al := line.AsmLines[j][4:]
-				addr, err := strconv.ParseInt(al[:strings.IndexRune(al, '\t')], 16, 64)
+				addr, err := strconv.ParseInt(al[:stdstrings.IndexRune(al, '\t')], 16, 64)
 				Assert(err == nil)
 				prog.LineByAddr[addr] = line
 			}
 		}
 
-		if end+2 > len(disas) {
+		if end >= len(disas) {
 			break
 		}
-		disas = disas[end+2:]
+		disas = disas[end:]
 	}
 
 	prog.FuncByFile = make(map[string]map[string]*Function)
@@ -562,7 +558,7 @@ func WinMode(prog *Program) error {
 						continue
 					}
 					history = history[:current]
-					history = append(history, HistoryItem{Body: data, Q0: event.OrigQ0, Q1: event.OrigQ1}, HistoryItem{Body: ref})
+					history = append(history, HistoryItem{Body: data, Q0: event.Q0, Q1: event.Q1}, HistoryItem{Body: ref})
 					current++
 
 					ClearTag(win)
@@ -574,13 +570,17 @@ func WinMode(prog *Program) error {
 			case 'x', 'X': /* execute. */
 				switch bytes.AsString(event.Text) {
 				case "Back":
-					current--
-					item := history[current]
-					WriteBody(win, item.Body, item.Q0, item.Q1)
+					if current > 0 {
+						current--
+						item := history[current]
+						WriteBody(win, item.Body, item.Q0, item.Q1)
+					}
 				case "Forward":
-					current++
-					item := history[current]
-					WriteBody(win, item.Body, item.Q0, item.Q1)
+					if current < len(history)-1 {
+						current++
+						item := history[current]
+						WriteBody(win, item.Body, item.Q0, item.Q1)
+					}
 				case "Del":
 					win.Del(true)
 					quit = true
@@ -613,7 +613,7 @@ func HeadlessMode(prog *Program) error {
 	for i := 2; i < len(os.Args); i++ {
 		target := os.Args[i]
 
-		name, numbers, ok := strings.Cut(target, ":")
+		name, numbers, ok := stdstrings.Cut(target, ":")
 		path, err := filepath.Abs(name)
 		if err != nil {
 			return fmt.Errorf("failed to resove path for %q: %v", name, err)
@@ -634,9 +634,9 @@ func HeadlessMode(prog *Program) error {
 			if err != nil {
 				return fmt.Errorf("failed to read entire file %q: %v", name, err)
 			}
-			lines := strings.Split(strings.TrimSpace(bytes.AsString(contents)), "\n")
+			lines := stdstrings.Split(stdstrings.TrimSpace(bytes.AsString(contents)), "\n")
 
-			begin, end, ok := strings.Cut(numbers, "-")
+			begin, end, ok := stdstrings.Cut(numbers, "-")
 			if !ok {
 				end = begin
 			}
@@ -658,7 +658,7 @@ func HeadlessMode(prog *Program) error {
 
 			var funcBegin, funcEnd int
 			for i := selectionBegin; i >= 0; i-- {
-				if strings.HasPrefix(lines[i], "func") {
+				if strings.StartsWith(lines[i], "func") {
 					funcBegin = i
 					break
 				}
