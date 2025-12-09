@@ -55,6 +55,12 @@ type WinInfo struct {
 	NameChan chan string
 }
 
+type HistoryItem struct {
+	Body []byte
+	Q0   int
+	Q1   int
+}
+
 const (
 	Prefix = "TEXT"
 	Suffix = "\n\n"
@@ -507,12 +513,12 @@ func ClearTag(win *acme.Win) {
 	win.Write("tag", []byte(" Look "))
 }
 
-func WriteBody(win *acme.Win, data []byte) {
+func WriteBody(win *acme.Win, data []byte, q0 int, q1 int) {
 	atomic.AddUint64(&Epoch, 1)
 	win.Addr(",")
 	win.Write("data", data)
 	win.Ctl("clean")
-	win.Addr("#0")
+	win.Addr("#%d,#%d", q0, q1)
 	win.Ctl("dot=addr")
 	win.Ctl("show")
 }
@@ -538,7 +544,7 @@ func WinMode(prog *Program) error {
 		os.Exit(0)
 	}()
 
-	var history [][]byte
+	var history []HistoryItem
 	var current int
 
 	eventChan := win.EventChan()
@@ -546,7 +552,7 @@ func WinMode(prog *Program) error {
 	for !quit {
 		select {
 		case event := <-eventChan:
-			// fmt.Printf("C1=%q C2=%q Q=#%d,#%d OrigQ=#%d,#%d Flag=%d Nb=%d Nr=%d Text=%q Arg=%q Loc=%q\n", event.C1, event.C2, event.Q0, event.Q1, event.OrigQ0, event.OrigQ1, event.Flag, event.Nb, event.Nr, event.Text, event.Arg, event.Loc)
+			//fmt.Printf("C1=%q C2=%q Q=#%d,#%d OrigQ=#%d,#%d Flag=%d Nb=%d Nr=%d Text=%q Arg=%q Loc=%q\n", event.C1, event.C2, event.Q0, event.Q1, event.OrigQ0, event.OrigQ1, event.Flag, event.Nb, event.Nr, event.Text, event.Arg, event.Loc)
 			switch event.C2 {
 			case 'L': /* look. */
 				if ref, ok := FindReference(win, event, prog, dataChan); ok {
@@ -556,23 +562,25 @@ func WinMode(prog *Program) error {
 						continue
 					}
 					history = history[:current]
-					history = append(history, data, ref)
+					history = append(history, HistoryItem{Body: data, Q0: event.OrigQ0, Q1: event.OrigQ1}, HistoryItem{Body: ref})
 					current++
 
 					ClearTag(win)
 					win.Write("tag", []byte("Back "))
 
-					WriteBody(win, ref)
+					WriteBody(win, ref, 0, 0)
 					continue
 				}
 			case 'x', 'X': /* execute. */
 				switch bytes.AsString(event.Text) {
 				case "Back":
 					current--
-					WriteBody(win, history[current])
+					item := history[current]
+					WriteBody(win, item.Body, item.Q0, item.Q1)
 				case "Forward":
 					current++
-					WriteBody(win, history[current])
+					item := history[current]
+					WriteBody(win, item.Body, item.Q0, item.Q1)
 				case "Del":
 					win.Del(true)
 					quit = true
@@ -592,7 +600,7 @@ func WinMode(prog *Program) error {
 			current = 0
 
 			ClearTag(win)
-			WriteBody(win, data)
+			WriteBody(win, data, 0, 0)
 		}
 	}
 
