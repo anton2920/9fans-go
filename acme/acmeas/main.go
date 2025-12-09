@@ -207,7 +207,7 @@ func GetSelectionDisassembly(prog *Program, filename string, funcLines []string,
 						}
 					}
 
-					/* Find closest disassembly line that does not appear anywhere in the program and add it to candidates, if all current line does are NOPs (most likely function has been inlined). */
+					/* Find closest disassembly line that does not appear anywhere in the program and add it to candidates, if all current line does is NOP (most likely function has been inlined). */
 					for i := 0; i < len(candidates); i++ {
 						c := candidates[i]
 						line := fn.Lines[c]
