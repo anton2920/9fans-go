@@ -57,9 +57,9 @@ type WinInfo struct {
 }
 
 type HistoryItem struct {
-	Body []byte
-	Q0   int
-	Q1   int
+	Lines []Line
+	Q0    int
+	Q1    int
 }
 
 const Prefix = "TEXT"
@@ -70,8 +70,7 @@ const (
 	ModeAsmOnly
 )
 
-var Mode int32
-var Epoch uint64
+var Epoch uint32
 
 func Assert(p bool) {
 	if !p {
@@ -79,8 +78,26 @@ func Assert(p bool) {
 	}
 }
 
-func FindReference(win *acme.Win, event *acme.Event, prog *Program, dataChan chan<- []byte) ([]byte, bool) {
-	win.Addr("#%d-/ /,#%d/,|	/", event.Q0, event.Q1)
+func RenderLines(lines []Line, mode int) []byte {
+	var buf stdbytes.Buffer
+
+	for i := 0; i < len(lines); i++ {
+		line := &lines[i]
+		if mode == ModeAsmWithSrc {
+			buf.WriteString(line.GoLine)
+			buf.WriteRune('\n')
+		}
+		for j := 0; j < len(line.AsmLines); j++ {
+			buf.WriteString(line.AsmLines[j])
+			buf.WriteRune('\n')
+		}
+	}
+
+	return buf.Bytes()
+}
+
+func FindReference(win *acme.Win, prog *Program, q0 int, q1 int) ([]Line, bool) {
+	win.Addr("#%d-/ /,#%d/,|	/", q0, q1)
 	data, err := win.ReadAll("xdata")
 	if (err != nil) || (len(data) <= 2) {
 		return nil, false
@@ -89,7 +106,7 @@ func FindReference(win *acme.Win, event *acme.Event, prog *Program, dataChan cha
 
 	fn, ok := prog.FuncByName[selection]
 	if ok {
-		return fn.Text, true
+		return fn.Lines, true
 	}
 
 	win.Addr("#0")
@@ -107,24 +124,13 @@ func FindReference(win *acme.Win, event *acme.Event, prog *Program, dataChan cha
 	}
 	line, ok := prog.LineByAddr[addr]
 	if ok {
-		var buf stdbytes.Buffer
-
-		buf.WriteString(line.GoLine)
-		buf.WriteRune('\n')
-		for i := 0; i < len(line.AsmLines); i++ {
-			buf.WriteString(line.AsmLines[i])
-			buf.WriteRune('\n')
-		}
-
-		return buf.Bytes(), true
+		return []Line{*line}, true
 	}
 
 	return nil, false
 }
 
-func GetSelectionDisassembly(prog *Program, filename string, funcLines []string, selectionLines []string, selectAll bool) []byte {
-	var buf stdbytes.Buffer
-
+func GetSelectionDisassembly(prog *Program, filename string, funcLines []string, selectionLines []string, selectAll bool) []Line {
 	fn, ok := prog.FuncByFile[filename][funcLines[0]]
 	if ok {
 		funcLinesSearch := make(map[string][]int)
@@ -133,20 +139,10 @@ func GetSelectionDisassembly(prog *Program, filename string, funcLines []string,
 		}
 
 		if (selectAll) || ((len(selectionLines) == 1) && (len(selectionLines[0]) == 0)) {
-			switch atomic.LoadInt32(&Mode) {
-			case ModeAsmWithSrc:
-				return fn.Text
-			case ModeAsmOnly:
-				for i := 0; i < len(fn.Lines); i++ {
-					line := &fn.Lines[i]
-					for j := 0; j < len(line.AsmLines); j++ {
-						buf.WriteString(line.AsmLines[j])
-						buf.WriteRune('\n')
-					}
-				}
-				return buf.Bytes()
-			}
+			return fn.Lines
 		} else {
+			var lines []Line
+
 			var nl int
 			for i := 0; i < len(funcLines); i++ {
 				if selectionLines[0] == funcLines[i] {
@@ -254,32 +250,23 @@ func GetSelectionDisassembly(prog *Program, filename string, funcLines []string,
 						}
 					}
 
-					/* Display all disassembly candidates .*/
+					/* Append all disassembly candidates .*/
 					for i := 0; i < len(candidates); i++ {
-						line := &fn.Lines[candidates[i]]
-
-						if atomic.LoadInt32(&Mode) == ModeAsmWithSrc {
-							buf.WriteString(line.GoLine)
-							buf.WriteRune('\n')
-						}
-						for j := 0; j < len(line.AsmLines); j++ {
-							buf.WriteString(line.AsmLines[j])
-							buf.WriteRune('\n')
-						}
+						lines = append(lines, fn.Lines[candidates[i]])
 					}
 				}
 			}
 
-			return buf.Bytes()
+			return lines
 		}
 	}
 
 	return nil
 }
 
-func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan<- []byte) {
+func MonitorWindow(wID int, prog *Program, nameChan <-chan string, linesChan chan<- []Line) {
 	var wName string
-	var epoch uint64
+	var epoch uint32
 
 	w, err := acme.Open(wID, nil)
 	if err != nil {
@@ -317,7 +304,7 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 				}
 
 				/* If selection changed. */
-				if (m0 != s0) || (m1 != s1) || (atomic.LoadUint64(&Epoch) != epoch) {
+				if (m0 != s0) || (m1 != s1) || (atomic.LoadUint32(&Epoch) != epoch) {
 					s0, s1 = m0, m1
 
 					selection, err := w.ReadAll("xdata")
@@ -347,10 +334,9 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 						// fmt.Printf("[%d]: s=#%d,#%d, f=#%d,#%d %s\n", wID, s0, s1, f0, f1, funcLines[0])
 
 						prog.RLock()
-						disas := GetSelectionDisassembly(prog, wName, funcLines, selectionLines, (s0 == f0) && (s1 == f1))
-						if len(disas) > 0 {
-							epoch = atomic.LoadUint64(&Epoch) + 1
-							dataChan <- disas
+						if lines := GetSelectionDisassembly(prog, wName, funcLines, selectionLines, (s0 == f0) && (s1 == f1)); len(lines) > 0 {
+							epoch = atomic.LoadUint32(&Epoch) + 1
+							linesChan <- lines
 						}
 						prog.RUnlock()
 					}
@@ -362,7 +348,7 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 	}
 }
 
-func MonitorWindows(prog *Program, dataChan chan<- []byte) {
+func MonitorWindows(prog *Program, linesChan chan<- []Line) {
 	windows := make(map[int]*WinInfo)
 
 	for {
@@ -385,7 +371,7 @@ func MonitorWindows(prog *Program, dataChan chan<- []byte) {
 					nameChan := make(chan string, 1)
 					nameChan <- w.Name
 					windows[w.ID] = &WinInfo{Name: w.Name, NameChan: nameChan}
-					go MonitorWindow(w.ID, prog, nameChan, dataChan)
+					go MonitorWindow(w.ID, prog, nameChan, linesChan)
 				}
 			}
 		}
@@ -523,7 +509,11 @@ func MonitorProgram(prog *Program, dataChan chan<- []byte) {
 		if lastModified.After(prog.LastModified) {
 			prog.LastModified = lastModified
 
-			dataChan <- []byte(fmt.Sprintf("Updating disassembly (attempt %d)...", attempts+1))
+			if attempts == 0 {
+				dataChan <- []byte("Updating disassembly...")
+			} else {
+				dataChan <- []byte(fmt.Sprintf("Updating disassembly (attempt %d)...", attempts+1))
+			}
 			if err := UpdateDisassembly(prog); err != nil {
 				lastErr = err
 				attempts++
@@ -537,19 +527,25 @@ func MonitorProgram(prog *Program, dataChan chan<- []byte) {
 	log.Fatalf("Failed to monitor program updates after %d attempts (last error: %v)", attempts, lastErr)
 }
 
-func ClearTag(win *acme.Win) {
+func WriteTag(win *acme.Win, mode int, back bool, forward bool) {
 	win.Ctl("cleartag")
 	win.Write("tag", []byte(" Look "))
-	switch atomic.LoadInt32(&Mode) {
+	switch mode {
 	case ModeAsmWithSrc:
 		win.Write("tag", []byte("AsmOnly "))
 	case ModeAsmOnly:
 		win.Write("tag", []byte("AsmWithSrc "))
 	}
+	if back {
+		win.Write("tag", []byte("Back "))
+	}
+	if forward {
+		win.Write("tag", []byte("Forward "))
+	}
 }
 
 func WriteBody(win *acme.Win, data []byte, q0 int, q1 int) {
-	atomic.AddUint64(&Epoch, 1)
+	atomic.AddUint32(&Epoch, 1)
 	win.Addr(",")
 	win.Write("data", data)
 	win.Ctl("clean")
@@ -558,18 +554,19 @@ func WriteBody(win *acme.Win, data []byte, q0 int, q1 int) {
 	win.Ctl("show")
 }
 
-func WinMode(prog *Program) error {
+func WinMode(prog *Program, mode int) error {
 	win, err := acme.New()
 	if err != nil {
 		return fmt.Errorf("failed to create new acme window: %v", err)
 	}
 	defer win.CloseFiles()
 
-	win.Name(filepath.Dir(prog.Name) + "/+acmeas")
+	win.Name("%s", filepath.Dir(prog.Name)+"/+acmeas")
 
 	dataChan := make(chan []byte)
+	linesChan := make(chan []Line)
 	go MonitorProgram(prog, dataChan)
-	go MonitorWindows(prog, dataChan)
+	go MonitorWindows(prog, linesChan)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
@@ -590,59 +587,50 @@ func WinMode(prog *Program) error {
 			//fmt.Printf("C1=%q C2=%q Q=#%d,#%d OrigQ=#%d,#%d Flag=%d Nb=%d Nr=%d Text=%q Arg=%q Loc=%q\n", event.C1, event.C2, event.Q0, event.Q1, event.OrigQ0, event.OrigQ1, event.Flag, event.Nb, event.Nr, event.Text, event.Arg, event.Loc)
 			switch event.C2 {
 			case 'L': /* look. */
-				if ref, ok := FindReference(win, event, prog, dataChan); ok {
-					win.Addr("#0")
-					data, err := win.ReadAll("data")
-					if err != nil {
-						continue
-					}
-					history = history[:current]
-					history = append(history, HistoryItem{Body: data, Q0: event.Q0, Q1: event.Q1}, HistoryItem{Body: ref})
+				if lines, ok := FindReference(win, prog, event.Q0, event.Q1); ok {
+					history[current] = HistoryItem{Lines: history[current].Lines, Q0: event.Q0, Q1: event.Q1}
+					history = append(history, HistoryItem{Lines: lines})
 					current++
 
-					ClearTag(win)
-					win.Write("tag", []byte("Back "))
-
-					WriteBody(win, ref, 0, 0)
+					WriteTag(win, mode, true, false)
+					WriteBody(win, RenderLines(lines, mode), 0, 0)
 					continue
 				}
 			case 'x', 'X': /* execute. */
 				switch bytes.AsString(event.Text) {
 				case "AsmOnly":
-					atomic.StoreInt32(&Mode, ModeAsmOnly)
+					mode = ModeAsmOnly
 				case "AsmWithSrc":
-					atomic.StoreInt32(&Mode, ModeAsmWithSrc)
+					mode = ModeAsmWithSrc
 				case "Back":
 					if current > 0 {
 						current--
-						item := history[current]
-						WriteBody(win, item.Body, item.Q0, item.Q1)
 					}
 				case "Forward":
 					if current < len(history)-1 {
 						current++
-						item := history[current]
-						WriteBody(win, item.Body, item.Q0, item.Q1)
 					}
 				case "Del":
 					win.Del(true)
 					quit = true
 				}
 
-				ClearTag(win)
-				if current > 0 {
-					win.Write("tag", []byte("Back "))
-				}
-				if current < len(history)-1 {
-					win.Write("tag", []byte("Forward "))
-				}
+				item := history[current]
+				WriteTag(win, mode, current > 0, current < len(history)-1)
+				WriteBody(win, RenderLines(item.Lines, mode), item.Q0, item.Q1)
 			}
 			win.WriteEvent(event)
+		case lines := <-linesChan:
+			history = append(history[:0], HistoryItem{Lines: lines})
+			current = 0
+
+			WriteTag(win, mode, false, false)
+			WriteBody(win, RenderLines(lines, mode), 0, 0)
 		case data := <-dataChan:
 			history = history[:0]
 			current = 0
 
-			ClearTag(win)
+			WriteTag(win, mode, false, false)
 			WriteBody(win, data, 0, 0)
 		}
 	}
@@ -650,7 +638,7 @@ func WinMode(prog *Program) error {
 	return nil
 }
 
-func HeadlessMode(prog *Program) error {
+func HeadlessMode(prog *Program, mode int) error {
 	if err := UpdateDisassembly(prog); err != nil {
 		return err
 	}
@@ -716,8 +704,8 @@ func HeadlessMode(prog *Program) error {
 			}
 			funcLines := lines[funcBegin:funcEnd]
 
-			if disas := GetSelectionDisassembly(prog, path, funcLines, selectionLines, false); len(disas) > 0 {
-				fmt.Printf("%s\n", disas)
+			if lines := GetSelectionDisassembly(prog, path, funcLines, selectionLines, false); len(lines) > 0 {
+				fmt.Printf("%s\n", RenderLines(lines, mode))
 			}
 		}
 	}
@@ -728,10 +716,11 @@ func HeadlessMode(prog *Program) error {
 func main() {
 	runtime.GOMAXPROCS(1)
 
+	mode := ModeAsmWithSrc
 	name := "./acmeas"
 	if len(os.Args) >= 2 {
 		if (os.Args[1] == "-asmonly") || (os.Args[1] == "--asmonly") {
-			Mode = ModeAsmOnly
+			mode = ModeAsmOnly
 			os.Args = os.Args[1:]
 		}
 		name = os.Args[1]
@@ -744,9 +733,9 @@ func main() {
 	prog := Program{Name: path}
 
 	if len(os.Args) <= 2 {
-		err = WinMode(&prog)
+		err = WinMode(&prog, mode)
 	} else {
-		err = HeadlessMode(&prog)
+		err = HeadlessMode(&prog, mode)
 	}
 	if err != nil {
 		log.Fatalf("acmeas: %v", err)
