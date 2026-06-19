@@ -63,7 +63,14 @@ type HistoryItem struct {
 }
 
 const Prefix = "TEXT"
+const DefaultDelay = 250 * time.Millisecond
 
+const (
+	ModeAsmWithSrc = iota
+	ModeAsmOnly
+)
+
+var Mode int32
 var Epoch uint64
 
 func Assert(p bool) {
@@ -116,6 +123,8 @@ func FindReference(win *acme.Win, event *acme.Event, prog *Program, dataChan cha
 }
 
 func GetSelectionDisassembly(prog *Program, filename string, funcLines []string, selectionLines []string, selectAll bool) []byte {
+	var buf stdbytes.Buffer
+
 	fn, ok := prog.FuncByFile[filename][funcLines[0]]
 	if ok {
 		funcLinesSearch := make(map[string][]int)
@@ -124,10 +133,20 @@ func GetSelectionDisassembly(prog *Program, filename string, funcLines []string,
 		}
 
 		if (selectAll) || ((len(selectionLines) == 1) && (len(selectionLines[0]) == 0)) {
-			return fn.Text
+			switch atomic.LoadInt32(&Mode) {
+			case ModeAsmWithSrc:
+				return fn.Text
+			case ModeAsmOnly:
+				for i := 0; i < len(fn.Lines); i++ {
+					line := &fn.Lines[i]
+					for j := 0; j < len(line.AsmLines); j++ {
+						buf.WriteString(line.AsmLines[j])
+						buf.WriteRune('\n')
+					}
+				}
+				return buf.Bytes()
+			}
 		} else {
-			var buf stdbytes.Buffer
-
 			var nl int
 			for i := 0; i < len(funcLines); i++ {
 				if selectionLines[0] == funcLines[i] {
@@ -239,8 +258,10 @@ func GetSelectionDisassembly(prog *Program, filename string, funcLines []string,
 					for i := 0; i < len(candidates); i++ {
 						line := &fn.Lines[candidates[i]]
 
-						buf.WriteString(line.GoLine)
-						buf.WriteRune('\n')
+						if atomic.LoadInt32(&Mode) == ModeAsmWithSrc {
+							buf.WriteString(line.GoLine)
+							buf.WriteRune('\n')
+						}
 						for j := 0; j < len(line.AsmLines); j++ {
 							buf.WriteString(line.AsmLines[j])
 							buf.WriteRune('\n')
@@ -336,7 +357,7 @@ func MonitorWindow(wID int, prog *Program, nameChan <-chan string, dataChan chan
 				}
 			}
 
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(DefaultDelay)
 		}
 	}
 }
@@ -369,7 +390,7 @@ func MonitorWindows(prog *Program, dataChan chan<- []byte) {
 			}
 		}
 
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(DefaultDelay)
 	}
 }
 
@@ -422,7 +443,7 @@ func ParseFunction(buf []byte, fn *Function) {
 	}
 }
 
-func UpdateDisassembly(prog *Program) {
+func UpdateDisassembly(prog *Program) error {
 	prog.Lock()
 	defer prog.Unlock()
 
@@ -435,7 +456,7 @@ func UpdateDisassembly(prog *Program) {
 	cmd := exec.Command("go", "tool", "objdump", "-S", prog.Name)
 	disas, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Fatalf("Failed to get disassembly output: %v", err)
+		return fmt.Errorf("failed to get disassembly output: %v", err)
 	}
 	prog.Disassembly = disas
 	prog.LineByAddr = make(map[int64]*Line)
@@ -482,31 +503,49 @@ func UpdateDisassembly(prog *Program) {
 		}
 		prog.FuncByFile[fn.File][fn.Lines[0].GoLine] = fn
 	}
+
+	return nil
 }
 
 func MonitorProgram(prog *Program, dataChan chan<- []byte) {
-	for {
+	var lastErr error
+	var attempts int
+
+	for ; attempts < 5; time.Sleep(DefaultDelay) {
 		st, err := os.Stat(prog.Name)
 		if err != nil {
-			log.Fatalf("Failed to get stat of the program: %v", err)
+			lastErr = err
+			attempts++
+			continue
 		}
 
 		lastModified := st.ModTime()
 		if lastModified.After(prog.LastModified) {
 			prog.LastModified = lastModified
 
-			dataChan <- []byte("Updating disassembly...")
-			UpdateDisassembly(prog)
+			dataChan <- []byte(fmt.Sprintf("Updating disassembly (attempt %d)...", attempts+1))
+			if err := UpdateDisassembly(prog); err != nil {
+				lastErr = err
+				attempts++
+				continue
+			}
 			dataChan <- []byte("Ready!")
+			attempts = 0
 		}
-
-		time.Sleep(200 * time.Millisecond)
 	}
+
+	log.Fatalf("Failed to monitor program updates after %d attempts (last error: %v)", attempts, lastErr)
 }
 
 func ClearTag(win *acme.Win) {
 	win.Ctl("cleartag")
 	win.Write("tag", []byte(" Look "))
+	switch atomic.LoadInt32(&Mode) {
+	case ModeAsmWithSrc:
+		win.Write("tag", []byte("AsmOnly "))
+	case ModeAsmOnly:
+		win.Write("tag", []byte("AsmWithSrc "))
+	}
 }
 
 func WriteBody(win *acme.Win, data []byte, q0 int, q1 int) {
@@ -569,6 +608,10 @@ func WinMode(prog *Program) error {
 				}
 			case 'x', 'X': /* execute. */
 				switch bytes.AsString(event.Text) {
+				case "AsmOnly":
+					atomic.StoreInt32(&Mode, ModeAsmOnly)
+				case "AsmWithSrc":
+					atomic.StoreInt32(&Mode, ModeAsmWithSrc)
 				case "Back":
 					if current > 0 {
 						current--
@@ -608,7 +651,9 @@ func WinMode(prog *Program) error {
 }
 
 func HeadlessMode(prog *Program) error {
-	UpdateDisassembly(prog)
+	if err := UpdateDisassembly(prog); err != nil {
+		return err
+	}
 
 	for i := 2; i < len(os.Args); i++ {
 		target := os.Args[i]
@@ -681,8 +726,14 @@ func HeadlessMode(prog *Program) error {
 }
 
 func main() {
+	runtime.GOMAXPROCS(1)
+
 	name := "./acmeas"
 	if len(os.Args) >= 2 {
+		if (os.Args[1] == "-asmonly") || (os.Args[1] == "--asmonly") {
+			Mode = ModeAsmOnly
+			os.Args = os.Args[1:]
+		}
 		name = os.Args[1]
 	}
 
