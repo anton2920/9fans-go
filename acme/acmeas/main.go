@@ -68,6 +68,8 @@ const DefaultDelay = 250 * time.Millisecond
 const (
 	ModeAsmWithSrc = iota
 	ModeAsmOnly
+	ModeSrcOnly
+	ModeCount
 )
 
 var Epoch uint32
@@ -83,13 +85,15 @@ func RenderLines(lines []Line, mode int) []byte {
 
 	for i := 0; i < len(lines); i++ {
 		line := &lines[i]
-		if mode == ModeAsmWithSrc {
+		if mode != ModeAsmOnly {
 			buf.WriteString(line.GoLine)
 			buf.WriteRune('\n')
 		}
-		for j := 0; j < len(line.AsmLines); j++ {
-			buf.WriteString(line.AsmLines[j])
-			buf.WriteRune('\n')
+		if mode != ModeSrcOnly {
+			for j := 0; j < len(line.AsmLines); j++ {
+				buf.WriteString(line.AsmLines[j])
+				buf.WriteRune('\n')
+			}
 		}
 	}
 
@@ -497,7 +501,7 @@ func MonitorProgram(prog *Program, dataChan chan<- []byte) {
 	var lastErr error
 	var attempts int
 
-	for ; attempts < 5; time.Sleep(DefaultDelay) {
+	for ; attempts < 100; time.Sleep(DefaultDelay) {
 		st, err := os.Stat(prog.Name)
 		if err != nil {
 			lastErr = err
@@ -534,6 +538,8 @@ func WriteTag(win *acme.Win, mode int, back bool, forward bool) {
 	case ModeAsmWithSrc:
 		win.Write("tag", []byte("AsmOnly "))
 	case ModeAsmOnly:
+		win.Write("tag", []byte("SrcOnly "))
+	case ModeSrcOnly:
 		win.Write("tag", []byte("AsmWithSrc "))
 	}
 	if back {
@@ -588,6 +594,7 @@ func WinMode(prog *Program, mode int) error {
 			switch event.C2 {
 			case 'L': /* look. */
 				if lines, ok := FindReference(win, prog, event.Q0, event.Q1); ok {
+					history = history[:current+1]
 					history[current] = HistoryItem{Lines: history[current].Lines, Q0: event.Q0, Q1: event.Q1}
 					history = append(history, HistoryItem{Lines: lines})
 					current++
@@ -598,10 +605,8 @@ func WinMode(prog *Program, mode int) error {
 				}
 			case 'x', 'X': /* execute. */
 				switch bytes.AsString(event.Text) {
-				case "AsmOnly":
-					mode = ModeAsmOnly
-				case "AsmWithSrc":
-					mode = ModeAsmWithSrc
+				case "AsmOnly", "SrcOnly", "AsmWithSrc":
+					mode = (mode + 1) % ModeCount
 				case "Back":
 					if current > 0 {
 						current--
